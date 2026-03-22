@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using backend.Models;
+using kaizenbackend.Models;
 
-namespace backend.Data
+namespace kaizenbackend.Data
 {
     public class AppDbContext : DbContext
     {
