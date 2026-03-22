@@ -1,0 +1,6 @@
+@kaizenbackend_HostAddress = http://localhost:5145
+
+GET {{kaizenbackend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
