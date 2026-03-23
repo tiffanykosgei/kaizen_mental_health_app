@@ -11,6 +11,7 @@ namespace kaizenbackend.Data
         public DbSet<ClientProfile> ClientProfiles { get; set; }
         public DbSet<ProfessionalProfile> ProfessionalProfiles { get; set; }
         public DbSet<Admin> Admins { get; set; }
+        public DbSet<SelfAssessment> SelfAssessments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -35,6 +36,12 @@ namespace kaizenbackend.Data
             modelBuilder.Entity<User>()
                 .HasIndex(u => u.Email)
                 .IsUnique();
+
+            modelBuilder.Entity<User>()
+               .HasMany<SelfAssessment>()
+               .WithOne(s => s.User)
+               .HasForeignKey(s => s.UserId)
+               .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }
