@@ -4,7 +4,6 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using BCrypt.Net;
 using kaizenbackend.Data;
 using kaizenbackend.DTOs;
 using kaizenbackend.Models;
@@ -30,29 +29,57 @@ namespace kaizenbackend.Controllers
             if (await _context.Users.AnyAsync(u => u.Email == dto.Email))
                 return BadRequest("A user with this email already exists.");
 
+            var allowedRoles = new[] { "Client", "Professional", "Admin" };
+            if (!allowedRoles.Contains(dto.Role))
+                return BadRequest("Invalid role. Must be Client, Professional or Admin.");
+
             var user = new User
             {
                 FullName = dto.FullName,
                 Email = dto.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password)
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+                Role = dto.Role,
+                DateRegistered = DateTime.UtcNow
             };
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            return Ok("Registration successful.");
+            if (dto.Role == "Client")
+            {
+                _context.ClientProfiles.Add(new ClientProfile { UserId = user.Id });
+                await _context.SaveChangesAsync();
+            }
+            else if (dto.Role == "Professional")
+            {
+                _context.ProfessionalProfiles.Add(new ProfessionalProfile
+                {
+                    UserId = user.Id,
+                    Bio = dto.Bio,
+                    Specialization = dto.Specialization
+                });
+                await _context.SaveChangesAsync();
+            }
+            else if (dto.Role == "Admin")
+            {
+                _context.Admins.Add(new Admin { UserId = user.Id });
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok(new { message = "Registration successful.", role = user.Role });
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto dto)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Email == dto.Email);
 
             if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
                 return Unauthorized("Invalid email or password.");
 
             var token = GenerateToken(user);
-            return Ok(new { token });
+            return Ok(new { token, role = user.Role, fullName = user.FullName });
         }
 
         private string GenerateToken(User user)
@@ -64,9 +91,10 @@ namespace kaizenbackend.Controllers
 
             var claims = new[]
             {
-                new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Name, user.FullName)
+                new Claim(ClaimTypes.Name, user.FullName),
+                new Claim(ClaimTypes.Role, user.Role)
             };
 
             var token = new JwtSecurityToken(
