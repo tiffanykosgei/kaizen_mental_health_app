@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using kaizenbackend.Data;
@@ -11,9 +12,11 @@ using kaizenbackend.Data;
 namespace kaizenbackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260326173846_UpdateClientProfile")]
+    partial class UpdateClientProfile
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -87,38 +90,6 @@ namespace kaizenbackend.Migrations
                     b.ToTable("ClientProfiles");
                 });
 
-            modelBuilder.Entity("kaizenbackend.Models.JournalEntry", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("JournalEntries");
-                });
-
             modelBuilder.Entity("kaizenbackend.Models.ProfessionalProfile", b =>
                 {
                     b.Property<int>("Id")
@@ -144,47 +115,6 @@ namespace kaizenbackend.Migrations
                         .IsUnique();
 
                     b.ToTable("ProfessionalProfiles");
-                });
-
-            modelBuilder.Entity("kaizenbackend.Models.Resource", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("DateUploaded")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("UploadedBy")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UploadedBy");
-
-                    b.ToTable("Resources");
                 });
 
             modelBuilder.Entity("kaizenbackend.Models.SelfAssessment", b =>
@@ -289,52 +219,6 @@ namespace kaizenbackend.Migrations
                     b.ToTable("SelfAssessments");
                 });
 
-            modelBuilder.Entity("kaizenbackend.Models.Session", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
-
-                    b.Property<int>("ClientId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PaymentReference")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PaymentStatus")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("ProfessionalId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("SessionDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.HasIndex("ProfessionalId");
-
-                    b.ToTable("Sessions");
-                });
-
             modelBuilder.Entity("kaizenbackend.Models.User", b =>
                 {
                     b.Property<int>("Id")
@@ -392,17 +276,6 @@ namespace kaizenbackend.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("kaizenbackend.Models.JournalEntry", b =>
-                {
-                    b.HasOne("kaizenbackend.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("kaizenbackend.Models.ProfessionalProfile", b =>
                 {
                     b.HasOne("kaizenbackend.Models.User", "User")
@@ -414,17 +287,6 @@ namespace kaizenbackend.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("kaizenbackend.Models.Resource", b =>
-                {
-                    b.HasOne("kaizenbackend.Models.User", "Uploader")
-                        .WithMany()
-                        .HasForeignKey("UploadedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Uploader");
-                });
-
             modelBuilder.Entity("kaizenbackend.Models.SelfAssessment", b =>
                 {
                     b.HasOne("kaizenbackend.Models.User", "User")
@@ -434,25 +296,6 @@ namespace kaizenbackend.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("kaizenbackend.Models.Session", b =>
-                {
-                    b.HasOne("kaizenbackend.Models.User", "Client")
-                        .WithMany()
-                        .HasForeignKey("ClientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("kaizenbackend.Models.User", "Professional")
-                        .WithMany()
-                        .HasForeignKey("ProfessionalId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Client");
-
-                    b.Navigation("Professional");
                 });
 
             modelBuilder.Entity("kaizenbackend.Models.User", b =>

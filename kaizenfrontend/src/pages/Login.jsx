@@ -19,8 +19,10 @@ export default function Login() {
 
     try {
       const response = await API.post('/auth/login', form);
-      const token = response.data.token;
+      const { token, role, fullName } = response.data;
       localStorage.setItem('token', token);
+      localStorage.setItem('role', role);
+      localStorage.setItem('fullName', fullName);
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data || 'Invalid email or password.');
