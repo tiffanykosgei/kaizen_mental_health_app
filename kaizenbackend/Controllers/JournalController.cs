@@ -26,18 +26,28 @@ namespace kaizenbackend.Controllers
             var userId = GetUserId();
             if (userId == null) return Unauthorized();
 
+            if (string.IsNullOrWhiteSpace(dto.Title))
+                return BadRequest("Title is required.");
+
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest("Content is required.");
+
             var entry = new JournalEntry
             {
                 UserId = userId.Value,
-                Title = dto.Title,
-                Content = dto.Content,
+                Title = dto.Title.Trim(),
+                Content = dto.Content.Trim(),
                 CreatedAt = DateTime.UtcNow
             };
 
             _context.JournalEntries.Add(entry);
             await _context.SaveChangesAsync();
 
-            return Ok(new { id = entry.Id, message = "Journal entry created" });
+            return Ok(new 
+            { 
+                id = entry.Id, 
+                message = "Journal entry created successfully." 
+            });
         }
 
         [HttpGet]
@@ -71,7 +81,8 @@ namespace kaizenbackend.Controllers
             var entry = await _context.JournalEntries
                 .FirstOrDefaultAsync(j => j.Id == id && j.UserId == userId);
 
-            if (entry == null) return NotFound();
+            if (entry == null)
+                return NotFound("Journal entry not found.");
 
             return Ok(entry);
         }
@@ -85,15 +96,22 @@ namespace kaizenbackend.Controllers
             var entry = await _context.JournalEntries
                 .FirstOrDefaultAsync(j => j.Id == id && j.UserId == userId);
 
-            if (entry == null) return NotFound();
+            if (entry == null)
+                return NotFound("Journal entry not found.");
 
-            entry.Title = dto.Title;
-            entry.Content = dto.Content;
+            if (string.IsNullOrWhiteSpace(dto.Title))
+                return BadRequest("Title is required.");
+
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest("Content is required.");
+
+            entry.Title = dto.Title.Trim();
+            entry.Content = dto.Content.Trim();
             entry.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Journal entry updated" });
+            return Ok(new { message = "Journal entry updated successfully." });
         }
 
         [HttpDelete("{id}")]
@@ -105,12 +123,13 @@ namespace kaizenbackend.Controllers
             var entry = await _context.JournalEntries
                 .FirstOrDefaultAsync(j => j.Id == id && j.UserId == userId);
 
-            if (entry == null) return NotFound();
+            if (entry == null)
+                return NotFound("Journal entry not found.");
 
             _context.JournalEntries.Remove(entry);
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Journal entry deleted" });
+            return Ok(new { message = "Journal entry deleted successfully." });
         }
 
         private int? GetUserId()

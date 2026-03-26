@@ -39,6 +39,14 @@ export default function Dashboard() {
 
           {role === 'Professional' && <>
             <button onClick={() => navigate('/upload-resource')}>Upload a resource</button>
+            <button onClick={() => navigate('/upload-resource')}
+              style={{ background: 'transparent', color: '#6c63ff', border: '1px solid #6c63ff' }}>
+              My resources
+            </button>
+            <button onClick={() => navigate('/resources')}
+              style={{ background: 'transparent', color: '#6c63ff', border: '1px solid #6c63ff' }}>
+              Browse all resources
+            </button>
             <button onClick={() => navigate('/sessions')}
               style={{ background: 'transparent', color: '#6c63ff', border: '1px solid #6c63ff' }}>
               My sessions

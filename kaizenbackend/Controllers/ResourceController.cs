@@ -34,9 +34,9 @@ namespace kaizenbackend.Controllers
                 return Forbid("Only professionals can upload resources.");
 
             // Validate type
-            var allowedTypes = new[] { "Article", "Video", "Guide", "Exercise" };
+            var allowedTypes = new[] { "Article", "Video", "Guide", "Exercise", "Podcast" };
             if (!allowedTypes.Contains(dto.Type))
-                return BadRequest("Type must be Article, Video, Guide or Exercise.");
+                return BadRequest("Type must be Article, Video, Guide, Exercise or Podcast.");
 
             // Validate category
             var allowedCategories = new[] { "Anxiety", "Depression", "Loneliness", "General" };

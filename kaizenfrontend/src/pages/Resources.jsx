@@ -14,6 +14,8 @@ const typeIcons = {
   Video:    '🎥',
   Guide:    '📘',
   Exercise: '🧘',
+  Podcast:  '🎙️',
+  Audio:    '🎧',
 };
 
 export default function Resources() {
@@ -40,7 +42,7 @@ export default function Resources() {
       setPrimaryConcern(recRes.data.primaryConcern || '');
       setAll(allRes.data || []);
     } catch (err) {
-      console.error('Could not load resources:', err);  
+      console.error('Error fetching resources:', err);
       setError('Could not load resources. Please try again.');
     } finally {
       setLoading(false);
@@ -128,6 +130,9 @@ export default function Resources() {
 
 function ResourceCard({ resource: r, highlighted }) {
   const cat = categoryColors[r.category] || categoryColors.General;
+  const isPodcast = r.type === 'Podcast';
+  const isAudio = r.type === 'Audio';
+  
   return (
     <div style={{
       background: 'white', borderRadius: 12, padding: '18px 20px',
@@ -147,15 +152,45 @@ function ResourceCard({ resource: r, highlighted }) {
       {r.description && (
         <p style={{ fontSize: 13, color: '#718096', marginBottom: 12, lineHeight: 1.6 }}>{r.description}</p>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 12, color: '#a0aec0' }}>
-          {r.type} · Added by {r.uploadedBy}
-        </span>
-        <a href={r.url} target="_blank" rel="noreferrer"
-          style={{ fontSize: 13, color: '#6c63ff', textDecoration: 'none', fontWeight: 500 }}>
-          Open →
-        </a>
-      </div>
+      
+      {/* Podcast Player */}
+      {isPodcast ? (
+        <div style={{ marginTop: 12, marginBottom: 8 }}>
+          <audio controls style={{ width: '100%', borderRadius: 8 }}>
+            <source src={r.url} type="audio/mpeg" />
+            Your browser does not support the audio element.
+          </audio>
+          <p style={{ fontSize: 11, color: '#a0aec0', marginTop: 6 }}>
+            🎙️ Podcast episode — press play to listen
+          </p>
+        </div>
+      ) : isAudio ? (
+        <div style={{ marginTop: 12, marginBottom: 8 }}>
+          <audio controls style={{ width: '100%', borderRadius: 8 }}>
+            <source src={r.url} type="audio/mpeg" />
+            Your browser does not support the audio element.
+          </audio>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: '#a0aec0' }}>
+            {r.type} · Added by {r.uploadedBy}
+          </span>
+          <a href={r.url} target="_blank" rel="noreferrer"
+            style={{ fontSize: 13, color: '#6c63ff', textDecoration: 'none', fontWeight: 500 }}>
+            Open →
+          </a>
+        </div>
+      )}
+      
+      {/* For audio/podcast, also show the "Added by" info */}
+      {(isPodcast || isAudio) && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+          <span style={{ fontSize: 11, color: '#a0aec0' }}>
+            Added by {r.uploadedBy}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

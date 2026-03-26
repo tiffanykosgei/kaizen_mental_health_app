@@ -79,7 +79,14 @@ export default function Assessment() {
       const payload = {};
       questions.forEach(q => { payload[q.id] = answers[q.id]; });
       const response = await API.post('/selfassessment/submit', payload);
-      setResult(response.data);
+      
+      // Fetch recommended resources based on the assessment
+      const resourcesResponse = await API.get('/resource/recommended');
+      
+      setResult({
+        ...response.data,
+        recommendedResources: resourcesResponse.data.resources || []
+      });
       setStep('results');
     } catch (err) {
       console.error('Error submitting assessment:', err);  
@@ -172,6 +179,84 @@ export default function Assessment() {
           <p style={{ fontSize: 13, fontWeight: 500, color: '#1a202c', marginBottom: 6 }}>Primary area of concern</p>
           <p style={{ fontSize: 13, color: '#4a5568', lineHeight: 1.6 }}>{result.resultSummary}</p>
         </div>
+
+        {/* Recommended Resources Section with Podcast Support */}
+        {result.recommendedResources && result.recommendedResources.length > 0 && (
+          <div style={{ marginTop: 20, marginBottom: 20 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 500, marginBottom: 12 }}>Recommended Resources</h3>
+            <p style={{ fontSize: 13, color: '#4a5568', marginBottom: 16 }}>
+              Based on your primary concern: <strong>{result.primaryConcern}</strong>
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {result.recommendedResources.slice(0, 3).map(resource => {
+                const isPodcast = resource.type === 'Podcast';
+                const isAudio = resource.type === 'Audio';
+                return (
+                  <div key={resource.id} style={{
+                    background: '#f7f9fc',
+                    borderRadius: 10,
+                    padding: '14px 16px',
+                    border: '1px solid #e2e8f0'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: '#1a202c' }}>{resource.title}</span>
+                      <span style={{
+                        fontSize: 11,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        background: isPodcast ? '#F3E5F5' : '#E1F5EE',
+                        color: isPodcast ? '#4A1D6D' : '#085041'
+                      }}>{resource.type}</span>
+                    </div>
+                    {resource.description && (
+                      <p style={{ fontSize: 12, color: '#718096', marginBottom: 10 }}>{resource.description}</p>
+                    )}
+                    
+                    {isPodcast ? (
+                      <div style={{ marginTop: 8 }}>
+                        <audio controls style={{ width: '100%' }}>
+                          <source src={resource.url} type="audio/mpeg" />
+                          Your browser does not support the audio element.
+                        </audio>
+                        <p style={{ fontSize: 10, color: '#a0aec0', marginTop: 6 }}>
+                          🎙️ Podcast episode — press play to listen
+                        </p>
+                      </div>
+                    ) : isAudio ? (
+                      <div style={{ marginTop: 8 }}>
+                        <audio controls style={{ width: '100%' }}>
+                          <source src={resource.url} type="audio/mpeg" />
+                          Your browser does not support the audio element.
+                        </audio>
+                      </div>
+                    ) : (
+                      <a href={resource.url} target="_blank" rel="noreferrer"
+                        style={{ fontSize: 12, color: '#6c63ff', textDecoration: 'none' }}>
+                        Open resource →
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {result.recommendedResources.length > 3 && (
+              <button
+                onClick={() => navigate('/resources')}
+                style={{
+                  marginTop: 12,
+                  width: 'auto',
+                  padding: '8px 16px',
+                  fontSize: 12,
+                  background: 'transparent',
+                  color: '#6c63ff',
+                  border: '1px solid #6c63ff'
+                }}
+              >
+                View all resources
+              </button>
+            )}
+          </div>
+        )}
 
         <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 8, padding: '12px 14px', marginBottom: 20, fontSize: 12, color: '#633806', lineHeight: 1.6 }}>
           <strong>Disclaimer:</strong> {result.disclaimer}
