@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -39,9 +40,10 @@ namespace kaizenbackend.Controllers
                 Email = dto.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
                 Role = dto.Role,
-                DateRegistered = DateTime.UtcNow
+                DateRegistered = DateTime.UtcNow,
+                PhoneNumber = dto.PhoneNumber
             };
-
+            
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
@@ -80,6 +82,79 @@ namespace kaizenbackend.Controllers
 
             var token = GenerateToken(user);
             return Ok(new { token, role = user.Role, fullName = user.FullName });
+        }
+
+        [HttpPut("update-profile")]
+        [Authorize]
+        public async Task<IActionResult> UpdateProfile(UpdateProfileDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userIdClaim == null) return Unauthorized();
+            int userId = int.Parse(userIdClaim);
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) return NotFound("User not found.");
+
+            // Update fields only if provided
+            if (!string.IsNullOrWhiteSpace(dto.FullName))
+                user.FullName = dto.FullName;
+            
+            if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
+                user.PhoneNumber = dto.PhoneNumber;
+
+            // Optional: Update password if provided
+            if (!string.IsNullOrWhiteSpace(dto.Password))
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new 
+            { 
+                message = "Profile updated successfully.",
+                fullName = user.FullName,
+                phoneNumber = user.PhoneNumber
+            });
+        }
+
+        [HttpGet("profile")]
+        [Authorize]
+        public async Task<IActionResult> GetProfile()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userIdClaim == null) return Unauthorized();
+            int userId = int.Parse(userIdClaim);
+
+            var user = await _context.Users
+                .Include(u => u.ClientProfile)
+                .Include(u => u.ProfessionalProfile)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null) return NotFound("User not found.");
+
+            return Ok(new
+            {
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.Role,
+                user.PhoneNumber,
+                user.DateRegistered,
+                ClientProfile = user.ClientProfile != null ? new
+                {
+                    user.ClientProfile.EmergencyContact,
+                    user.ClientProfile.EmergencyContactPhone,
+                    user.ClientProfile.Diagnoses,
+                    user.ClientProfile.CurrentMedications,
+                    user.ClientProfile.PreviousTherapy,
+                    user.ClientProfile.KnownTriggers,
+                    user.ClientProfile.MedicalNotes
+                } : null,
+                ProfessionalProfile = user.ProfessionalProfile != null ? new
+                {
+                    user.ProfessionalProfile.Bio,
+                    user.ProfessionalProfile.Specialization
+                } : null
+            });
         }
 
         private string GenerateToken(User user)

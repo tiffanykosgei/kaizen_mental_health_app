@@ -1,3 +1,5 @@
+using System;
+
 namespace kaizenbackend.Models
 {
     public class Session
@@ -11,7 +13,8 @@ namespace kaizenbackend.Models
         public string? PaymentReference { get; set; }
         public decimal Amount { get; set; } = 1500;
         public string? Notes { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
 
         public User Client { get; set; } = null!;
         public User Professional { get; set; } = null!;

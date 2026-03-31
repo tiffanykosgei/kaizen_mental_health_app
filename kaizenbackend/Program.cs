@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using kaizenbackend.Data;
+using kaizenbackend.Services;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddCors(options =>
 {
@@ -37,6 +38,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 // Add services to the container
+builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

@@ -18,6 +18,7 @@ namespace kaizenbackend.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // User relationships
             modelBuilder.Entity<User>()
                 .HasOne(u => u.ClientProfile)
                 .WithOne(c => c.User)
@@ -40,35 +41,69 @@ namespace kaizenbackend.Data
                 .HasIndex(u => u.Email)
                 .IsUnique();
 
+            // SelfAssessment relationship
             modelBuilder.Entity<User>()
                .HasMany<SelfAssessment>()
                .WithOne(s => s.User)
                .HasForeignKey(s => s.UserId)
                .OnDelete(DeleteBehavior.Cascade);
 
-               modelBuilder.Entity<User>()
+            // JournalEntry relationship
+            modelBuilder.Entity<User>()
                 .HasMany<JournalEntry>()
                 .WithOne(j => j.User)
                 .HasForeignKey(j => j.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-               modelBuilder.Entity<Session>()
+            // Resource relationship
+            modelBuilder.Entity<Resource>()
+                .HasOne(r => r.Uploader)
+                .WithMany()
+                .HasForeignKey(r => r.UploadedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Session relationships (only declare once)
+            modelBuilder.Entity<Session>()
                 .HasOne(s => s.Client)
                 .WithMany()
                 .HasForeignKey(s => s.ClientId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-               modelBuilder.Entity<Session>()
+            modelBuilder.Entity<Session>()
                 .HasOne(s => s.Professional)
                 .WithMany()
                 .HasForeignKey(s => s.ProfessionalId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-               modelBuilder.Entity<Resource>()
-                .HasOne(r => r.Uploader)
-                .WithMany()
-                .HasForeignKey(r => r.UploadedBy)
-                .OnDelete(DeleteBehavior.Restrict);
+            // Configure DateTime handling for Session to use timestamp with time zone
+            modelBuilder.Entity<Session>()
+                .Property(s => s.SessionDate)
+                .HasColumnType("timestamp with time zone");
+
+            modelBuilder.Entity<Session>()
+                .Property(s => s.CreatedAt)
+                .HasColumnType("timestamp with time zone");
+
+            modelBuilder.Entity<Session>()
+                .Property(s => s.UpdatedAt)
+                .HasColumnType("timestamp with time zone");
+
+            // Configure DateTime handling for other tables if needed
+            modelBuilder.Entity<SelfAssessment>()
+                .Property(s => s.DateCompleted)
+                .HasColumnType("timestamp with time zone");
+
+            modelBuilder.Entity<JournalEntry>()
+                .Property(j => j.CreatedAt)
+                .HasColumnType("timestamp with time zone");
+
+            modelBuilder.Entity<JournalEntry>()
+                .Property(j => j.UpdatedAt)
+                .HasColumnType("timestamp with time zone");
+
+            modelBuilder.Entity<Resource>()
+                .Property(r => r.DateUploaded)
+                .HasColumnType("timestamp with time zone");
         }
     }
 }
