@@ -61,6 +61,55 @@ namespace kaizenbackend.Controllers
             return Ok(professionals);
         }
 
+        // GET: api/session/all-sessions - ADMIN ENDPOINT (renamed for clarity)
+        [HttpGet("all-sessions")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetAllSessions()
+        {
+            try
+            {
+                var sessions = await _context.Sessions
+                    .Include(s => s.Client)
+                    .Include(s => s.Professional)
+                    .ThenInclude(p => p.ProfessionalProfile)
+                    .OrderByDescending(s => s.SessionDate)
+                    .Select(s => new
+                    {
+                        s.Id,
+                        s.SessionDate,
+                        s.Status,
+                        s.PaymentStatus,
+                        s.Amount,
+                        s.PlatformFee,
+                        s.ProfessionalEarnings,
+                        s.PayoutStatus,
+                        s.Notes,
+                        s.CreatedAt,
+                        Client = new
+                        {
+                            s.Client.Id,
+                            s.Client.FullName,
+                            s.Client.Email
+                        },
+                        Professional = new
+                        {
+                            s.Professional.Id,
+                            s.Professional.FullName,
+                            s.Professional.Email,
+                            Specialization = s.Professional.ProfessionalProfile != null ? s.Professional.ProfessionalProfile.Specialization : null
+                        }
+                    })
+                    .ToListAsync();
+
+                return Ok(sessions);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetAllSessions: {ex.Message}");
+                return StatusCode(500, new { message = "An error occurred while fetching all sessions.", error = ex.Message });
+            }
+        }
+
         // GET: api/session/available/{professionalId}
         [HttpGet("available/{professionalId}")]
         public async Task<IActionResult> GetAvailableSlots(int professionalId, DateTime? date)
@@ -170,99 +219,99 @@ namespace kaizenbackend.Controllers
         }
 
         // POST: api/session/book
-[HttpPost("book")]
-public async Task<IActionResult> BookSession([FromBody] CreateSessionDto request)
-{
-    try
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (userIdClaim == null) return Unauthorized();
-        int clientId = int.Parse(userIdClaim);
-
-        var role = User.FindFirst(ClaimTypes.Role)?.Value;
-        if (role != "Client")
-            return Forbid("Only clients can book sessions.");
-
-        // Verify professional exists
-        var professional = await _context.Users
-            .FirstOrDefaultAsync(u => u.Id == request.ProfessionalId && u.Role == "Professional");
-
-        if (professional == null)
-            return BadRequest("Selected professional not found.");
-
-        // Parse the session date - handle different formats
-        DateTime sessionDate;
-        try
+        [HttpPost("book")]
+        public async Task<IActionResult> BookSession([FromBody] CreateSessionDto request)
         {
-            // Try to parse the date from the request
-            sessionDate = request.SessionDate;
-            
-            // If the date is in UTC, convert to local for validation
-            if (sessionDate.Kind == DateTimeKind.Utc)
+            try
             {
-                sessionDate = sessionDate.ToLocalTime();
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null) return Unauthorized();
+                int clientId = int.Parse(userIdClaim);
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value;
+                if (role != "Client")
+                    return Forbid("Only clients can book sessions.");
+
+                // Verify professional exists
+                var professional = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Id == request.ProfessionalId && u.Role == "Professional");
+
+                if (professional == null)
+                    return BadRequest("Selected professional not found.");
+
+                // Parse the session date - handle different formats
+                DateTime sessionDate;
+                try
+                {
+                    // Try to parse the date from the request
+                    sessionDate = request.SessionDate;
+                    
+                    // If the date is in UTC, convert to local for validation
+                    if (sessionDate.Kind == DateTimeKind.Utc)
+                    {
+                        sessionDate = sessionDate.ToLocalTime();
+                    }
+                }
+                catch (Exception)
+                {
+                    return BadRequest("Invalid session date format. Please use a valid date and time.");
+                }
+
+                // Check if slot is within working hours (9 AM - 5 PM Kenya time)
+                int hour = sessionDate.Hour;
+                if (hour < 9 || hour >= 17)
+                    return BadRequest($"Sessions are only available between 9 AM and 5 PM (Kenya time). You selected {hour:00}:00");
+
+                // Check if the date is in the past
+                if (sessionDate.Date < DateTime.Now.Date)
+                    return BadRequest("Cannot book sessions in the past.");
+
+                // Convert to UTC for database storage
+                DateTime utcSessionDate = sessionDate.ToUniversalTime();
+
+                // Check if slot is already booked
+                var existingSession = await _context.Sessions
+                    .FirstOrDefaultAsync(s => s.ProfessionalId == request.ProfessionalId 
+                        && s.SessionDate == utcSessionDate
+                        && s.Status != "Cancelled");
+
+                if (existingSession != null)
+                    return BadRequest("This time slot is already booked. Please select another time.");
+
+                // Create the session with UTC date
+                var session = new Session
+                {
+                    ClientId = clientId,
+                    ProfessionalId = request.ProfessionalId,
+                    SessionDate = utcSessionDate,
+                    Status = "Pending",
+                    PaymentStatus = "Pending",
+                    Amount = 1500,
+                    Notes = request.Notes ?? "",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Sessions.Add(session);
+                await _context.SaveChangesAsync();
+
+                // Format the date for display in Kenya time
+                string displayDate = sessionDate.ToString("dd MMM yyyy, hh:mm tt");
+
+                return Ok(new
+                {
+                    message = "Session booked successfully! Please complete payment to confirm your booking.",
+                    sessionId = session.Id,
+                    amount = session.Amount,
+                    paymentStatus = session.PaymentStatus,
+                    sessionDate = displayDate
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in BookSession: {ex.Message}");
+                return StatusCode(500, new { message = "An error occurred while booking the session.", error = ex.Message });
             }
         }
-        catch (Exception)
-        {
-            return BadRequest("Invalid session date format. Please use a valid date and time.");
-        }
-
-        // Check if slot is within working hours (9 AM - 5 PM Kenya time)
-        int hour = sessionDate.Hour;
-        if (hour < 9 || hour >= 17)
-            return BadRequest($"Sessions are only available between 9 AM and 5 PM (Kenya time). You selected {hour:00}:00");
-
-        // Check if the date is in the past
-        if (sessionDate.Date < DateTime.Now.Date)
-            return BadRequest("Cannot book sessions in the past.");
-
-        // Convert to UTC for database storage
-        DateTime utcSessionDate = sessionDate.ToUniversalTime();
-
-        // Check if slot is already booked
-        var existingSession = await _context.Sessions
-            .FirstOrDefaultAsync(s => s.ProfessionalId == request.ProfessionalId 
-                && s.SessionDate == utcSessionDate
-                && s.Status != "Cancelled");
-
-        if (existingSession != null)
-            return BadRequest("This time slot is already booked. Please select another time.");
-
-        // Create the session with UTC date
-        var session = new Session
-        {
-            ClientId = clientId,
-            ProfessionalId = request.ProfessionalId,
-            SessionDate = utcSessionDate,
-            Status = "Pending",
-            PaymentStatus = "Pending",
-            Amount = 1500,
-            Notes = request.Notes ?? "",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.Sessions.Add(session);
-        await _context.SaveChangesAsync();
-
-        // Format the date for display in Kenya time
-        string displayDate = sessionDate.ToString("dd MMM yyyy, hh:mm tt");
-
-        return Ok(new
-        {
-            message = "Session booked successfully! Please complete payment to confirm your booking.",
-            sessionId = session.Id,
-            amount = session.Amount,
-            paymentStatus = session.PaymentStatus,
-            sessionDate = displayDate
-        });
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error in BookSession: {ex.Message}");
-        return StatusCode(500, new { message = "An error occurred while booking the session.", error = ex.Message });
-    }
-}
                    
         // GET: api/session/my-sessions
         [HttpGet("my-sessions")]

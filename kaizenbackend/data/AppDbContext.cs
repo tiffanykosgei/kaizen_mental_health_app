@@ -15,6 +15,9 @@ namespace kaizenbackend.Data
         public DbSet<JournalEntry> JournalEntries { get; set; }
         public DbSet<Resource> Resources { get; set; }
         public DbSet<Session> Sessions { get; set; }
+        public DbSet<Rating> Ratings { get; set; }
+        public DbSet<PlatformSetting> PlatformSettings { get; set; }
+        public DbSet<ResourceRating> ResourceRatings { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -104,6 +107,47 @@ namespace kaizenbackend.Data
             modelBuilder.Entity<Resource>()
                 .Property(r => r.DateUploaded)
                 .HasColumnType("timestamp with time zone");
+
+                // Rating relationships
+modelBuilder.Entity<Rating>()
+    .HasOne(r => r.Session)
+    .WithMany()
+    .HasForeignKey(r => r.SessionId)
+    .OnDelete(DeleteBehavior.Cascade);
+
+modelBuilder.Entity<Rating>()
+    .HasOne(r => r.Client)
+    .WithMany()
+    .HasForeignKey(r => r.ClientId)
+    .OnDelete(DeleteBehavior.Restrict);
+
+modelBuilder.Entity<Rating>()
+    .HasOne(r => r.Professional)
+    .WithMany()
+    .HasForeignKey(r => r.ProfessionalId)
+    .OnDelete(DeleteBehavior.Restrict);
+
+    // PlatformSetting - seed default values
+modelBuilder.Entity<PlatformSetting>().HasData(
+    new PlatformSetting { Id = 1, DefaultPlatformPercentage = 40, DefaultProfessionalPercentage = 60, UpdatedAt = DateTime.UtcNow }
+);
+
+modelBuilder.Entity<ResourceRating>()
+    .HasOne(r => r.Resource)
+    .WithMany()
+    .HasForeignKey(r => r.ResourceId)
+    .OnDelete(DeleteBehavior.Cascade);
+
+modelBuilder.Entity<ResourceRating>()
+    .HasOne(r => r.User)
+    .WithMany()
+    .HasForeignKey(r => r.UserId)
+    .OnDelete(DeleteBehavior.Restrict);
+
+// Ensure one user can only rate a resource once
+modelBuilder.Entity<ResourceRating>()
+    .HasIndex(r => new { r.ResourceId, r.UserId })
+    .IsUnique();
         }
     }
 }

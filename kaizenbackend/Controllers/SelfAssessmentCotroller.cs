@@ -117,6 +117,41 @@ namespace kaizenbackend.Controllers
             return Ok(history);
         }
 
+        // GET: api/selfassessment/all
+[HttpGet("all")]
+[Authorize(Roles = "Admin")]
+public async Task<IActionResult> GetAllAssessments()
+{
+    var assessments = await _context.SelfAssessments
+        .Include(s => s.User)
+        .OrderByDescending(s => s.DateCompleted)
+        .Select(s => new
+        {
+            s.Id,
+            s.UserId,
+            s.DateCompleted,
+            s.AnxietyScore,
+            s.DepressionScore,
+            s.LonelinessScore,
+            s.OverallScore,
+            s.AnxietyLevel,
+            s.DepressionLevel,
+            s.LonelinessLevel,
+            s.OverallLevel,
+            s.Primaryconcern,
+            s.ResultSummary,
+            User = new
+            {
+                s.User.Id,
+                s.User.FullName,
+                s.User.Email
+            }
+        })
+        .ToListAsync();
+
+    return Ok(assessments);
+}
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {

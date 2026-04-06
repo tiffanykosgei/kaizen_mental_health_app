@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using kaizenbackend.Data;
@@ -11,9 +12,11 @@ using kaizenbackend.Data;
 namespace kaizenbackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260405101700_AddRevenueSplitAndRatings")]
+    partial class AddRevenueSplitAndRatings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -146,7 +149,7 @@ namespace kaizenbackend.Migrations
                             Id = 1,
                             DefaultPlatformPercentage = 40,
                             DefaultProfessionalPercentage = 60,
-                            UpdatedAt = new DateTime(2026, 4, 6, 7, 57, 33, 69, DateTimeKind.Utc).AddTicks(8945)
+                            UpdatedAt = new DateTime(2026, 4, 5, 10, 16, 59, 363, DateTimeKind.Utc).AddTicks(6499)
                         });
                 });
 
@@ -276,39 +279,6 @@ namespace kaizenbackend.Migrations
                     b.HasIndex("UploadedBy");
 
                     b.ToTable("Resources");
-                });
-
-            modelBuilder.Entity("kaizenbackend.Models.ResourceRating", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Comment")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Rating")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ResourceId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("ResourceId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("ResourceRatings");
                 });
 
             modelBuilder.Entity("kaizenbackend.Models.SelfAssessment", b =>
@@ -590,25 +560,6 @@ namespace kaizenbackend.Migrations
                         .IsRequired();
 
                     b.Navigation("Uploader");
-                });
-
-            modelBuilder.Entity("kaizenbackend.Models.ResourceRating", b =>
-                {
-                    b.HasOne("kaizenbackend.Models.Resource", "Resource")
-                        .WithMany()
-                        .HasForeignKey("ResourceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("kaizenbackend.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Resource");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("kaizenbackend.Models.SelfAssessment", b =>

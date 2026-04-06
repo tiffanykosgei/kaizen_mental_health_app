@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/useTheme';
 
+// Client navigation
 const clientNav = [
   { icon: '🏠', label: 'Dashboard',   path: '/dashboard' },
   { icon: '🧠', label: 'Assessment',  path: '/assessment' },
@@ -9,6 +10,7 @@ const clientNav = [
   { icon: '📅', label: 'Sessions',    path: '/sessions' },
 ];
 
+// Professional navigation
 const professionalNav = [
   { icon: '🏠', label: 'Dashboard',   path: '/dashboard' },
   { icon: '📅', label: 'My Sessions', path: '/professional-sessions' },
@@ -16,9 +18,15 @@ const professionalNav = [
   { icon: '📚', label: 'Resources',   path: '/resources' },
 ];
 
+// Admin navigation - EXPANDED with all admin features
 const adminNav = [
-  { icon: '🏠', label: 'Dashboard',   path: '/dashboard' },
-  { icon: '🛡️', label: 'Admin Panel', path: '/admin' },
+  { icon: '🏠', label: 'Dashboard',      path: '/dashboard' },
+  { icon: '👥', label: 'Users',          path: '/admin/users' },
+  { icon: '📅', label: 'Sessions',       path: '/admin/sessions' },
+  { icon: '📊', label: 'Assessments',    path: '/admin/assessments' },
+  { icon: '📚', label: 'Resources',      path: '/admin/resources' },
+  { icon: '💰', label: 'Revenue',        path: '/admin/revenue' },
+  { icon: '📈', label: 'Reports',        path: '/admin/reports' },
 ];
 
 export default function Layout({ children }) {

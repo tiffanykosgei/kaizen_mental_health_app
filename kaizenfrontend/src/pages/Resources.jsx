@@ -26,6 +26,14 @@ export default function Resources() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [primaryConcern, setPrimaryConcern] = useState('');
+  
+  // Rating states
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [selectedResource, setSelectedResource] = useState(null);
+  const [ratingValue, setRatingValue] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [resourceRatings, setResourceRatings] = useState({});
 
   useEffect(() => {
     fetchResources();
@@ -38,14 +46,69 @@ export default function Resources() {
         API.get('/resource/recommended'),
         API.get('/resource/all'),
       ]);
-      setRecommended(recRes.data.resources || []);
+      
+      const recommendedData = recRes.data.resources || [];
+      const allData = allRes.data || [];
+      
+      setRecommended(recommendedData);
       setPrimaryConcern(recRes.data.primaryConcern || '');
-      setAll(allRes.data || []);
+      setAll(allData);
+      
+      // Fetch ratings for all resources after setting them
+      const allResources = [...recommendedData, ...allData];
+      const uniqueResources = Array.from(new Map(allResources.map(r => [r.id, r])).values());
+      
+      for (const resource of uniqueResources) {
+        try {
+          const ratingResponse = await API.get(`/resourcerating/${resource.id}`);
+          setResourceRatings(prev => ({
+            ...prev,
+            [resource.id]: ratingResponse.data
+          }));
+        } catch (err) {
+          console.error(`Failed to fetch rating for resource ${resource.id}:`, err);
+        }
+      }
     } catch (err) {
       console.error('Error fetching resources:', err);
       setError('Could not load resources. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchResourceRating = async (resourceId) => {
+    try {
+      const response = await API.get(`/resourcerating/${resourceId}`);
+      setResourceRatings(prev => ({
+        ...prev,
+        [resourceId]: response.data
+      }));
+    } catch (err) {
+      console.error('Failed to fetch rating:', err);
+    }
+  };
+
+  const submitRating = async () => {
+    if (!selectedResource) return;
+    
+    setRatingSubmitting(true);
+    try {
+      await API.post(`/resourcerating/${selectedResource.id}`, {
+        rating: ratingValue,
+        comment: ratingComment
+      });
+      // Refresh ratings for this resource
+      await fetchResourceRating(selectedResource.id);
+      setShowRatingModal(false);
+      setRatingValue(5);
+      setRatingComment('');
+      setError('');
+    } catch (err) {
+      console.error('Failed to submit rating:', err);
+      setError('Failed to submit rating. Please try again.');
+    } finally {
+      setRatingSubmitting(false);
     }
   };
 
@@ -89,7 +152,16 @@ export default function Resources() {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {recommended.slice(0, 3).map(r => (
-                <ResourceCard key={r.id} resource={r} highlighted />
+                <ResourceCard 
+                  key={r.id} 
+                  resource={r} 
+                  highlighted 
+                  ratingData={resourceRatings[r.id]}
+                  onRate={() => {
+                    setSelectedResource(r);
+                    setShowRatingModal(true);
+                  }}
+                />
               ))}
             </div>
           </div>
@@ -119,19 +191,147 @@ export default function Resources() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {filtered.map(r => (
-              <ResourceCard key={r.id} resource={r} />
+              <ResourceCard 
+                key={r.id} 
+                resource={r} 
+                ratingData={resourceRatings[r.id]}
+                onRate={() => {
+                  setSelectedResource(r);
+                  setShowRatingModal(true);
+                }}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* Rating Modal */}
+      {showRatingModal && selectedResource && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 24, maxWidth: 450, width: '90%' }}>
+            <h3 style={{ fontSize: 18, marginBottom: 8, color: '#1a202c' }}>Rate this Resource</h3>
+            <p style={{ fontSize: 13, color: '#718096', marginBottom: 20 }}>{selectedResource.title}</p>
+            
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: '#4a5568' }}>Your Rating (1-5 stars)</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    onClick={() => setRatingValue(star)}
+                    style={{
+                      background: ratingValue >= star ? '#FFD700' : '#f0f4f8',
+                      border: 'none',
+                      width: 44,
+                      height: 44,
+                      borderRadius: 8,
+                      fontSize: 20,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (ratingValue < star) e.currentTarget.style.background = '#FFE44D';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (ratingValue < star) e.currentTarget.style.background = '#f0f4f8';
+                    }}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: '#4a5568' }}>Comments (Optional)</label>
+              <textarea
+                value={ratingComment}
+                onChange={(e) => setRatingComment(e.target.value)}
+                placeholder="Share your thoughts about this resource... Was it helpful? Would you recommend it to others?"
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+              />
+            </div>
+            
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button 
+                onClick={submitRating} 
+                disabled={ratingSubmitting} 
+                style={{ 
+                  flex: 1,
+                  opacity: ratingSubmitting ? 0.6 : 1,
+                  cursor: ratingSubmitting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
+              </button>
+              <button 
+                onClick={() => { 
+                  setShowRatingModal(false); 
+                  setRatingValue(5); 
+                  setRatingComment('');
+                  setError('');
+                }}
+                style={{ 
+                  flex: 1, 
+                  background: 'transparent', 
+                  color: '#6c63ff', 
+                  border: '1px solid #6c63ff' 
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ResourceCard({ resource: r, highlighted }) {
+function ResourceCard({ resource: r, highlighted, ratingData, onRate }) {
   const cat = categoryColors[r.category] || categoryColors.General;
   const isPodcast = r.type === 'Podcast';
   const isAudio = r.type === 'Audio';
+  const averageRating = ratingData?.averageRating || 0;
+  const totalRatings = ratingData?.totalRatings || 0;
+  
+  const getStarDisplay = () => {
+    const fullStars = Math.floor(averageRating);
+    const hasHalfStar = averageRating % 1 >= 0.5;
+    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+    
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        {[...Array(fullStars)].map((_, i) => (
+          <span key={`full-${i}`} style={{ color: '#FFD700', fontSize: 12 }}>★</span>
+        ))}
+        {hasHalfStar && <span style={{ color: '#FFD700', fontSize: 12 }}>½</span>}
+        {[...Array(emptyStars)].map((_, i) => (
+          <span key={`empty-${i}`} style={{ color: '#e2e8f0', fontSize: 12 }}>★</span>
+        ))}
+      </span>
+    );
+  };
   
   return (
     <div style={{
@@ -182,6 +382,51 @@ function ResourceCard({ resource: r, highlighted }) {
           </a>
         </div>
       )}
+      
+      {/* Rating Section */}
+      <div style={{ 
+        marginTop: 12, 
+        paddingTop: 12, 
+        borderTop: '1px solid #e2e8f0',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {getStarDisplay()}
+            <span style={{ fontSize: 12, fontWeight: 500, color: '#1a202c', marginLeft: 4 }}>
+              {averageRating > 0 ? averageRating.toFixed(1) : 'No ratings'}
+            </span>
+          </div>
+          <span style={{ fontSize: 11, color: '#a0aec0' }}>
+            ({totalRatings} {totalRatings === 1 ? 'review' : 'reviews'})
+          </span>
+        </div>
+        <button
+          onClick={onRate}
+          style={{
+            background: 'transparent',
+            color: '#6c63ff',
+            border: '1px solid #6c63ff',
+            padding: '4px 12px',
+            fontSize: 12,
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = '#6c63ff';
+            e.currentTarget.style.color = 'white';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = '#6c63ff';
+          }}
+        >
+          Rate this resource
+        </button>
+      </div>
       
       {/* For audio/podcast, also show the "Added by" info */}
       {(isPodcast || isAudio) && (
