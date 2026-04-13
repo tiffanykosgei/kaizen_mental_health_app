@@ -18,6 +18,7 @@ namespace kaizenbackend.Data
         public DbSet<Rating> Ratings { get; set; }
         public DbSet<PlatformSetting> PlatformSettings { get; set; }
         public DbSet<ResourceRating> ResourceRatings { get; set; }
+        public DbSet<EmailVerification> EmailVerifications { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

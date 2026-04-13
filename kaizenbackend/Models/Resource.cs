@@ -10,6 +10,8 @@ namespace kaizenbackend.Models
         public string Url { get; set; } = string.Empty;
         public int UploadedBy { get; set; }
         public DateTime DateUploaded { get; set; } = DateTime.UtcNow;
+        public decimal AverageRating { get; set; } = 0;
+        public int TotalRatings { get; set; } = 0;
 
         public User Uploader { get; set; } = null!;
     }

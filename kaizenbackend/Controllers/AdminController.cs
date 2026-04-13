@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using kaizenbackend.Data;
+using kaizenbackend.Models;
 
 namespace kaizenbackend.Controllers
 {
@@ -51,7 +52,6 @@ namespace kaizenbackend.Controllers
                 .CountAsync(s => s.Status == "Cancelled");
 
             var totalAssessments = await _context.SelfAssessments.CountAsync();
-
             var totalResources = await _context.Resources.CountAsync();
 
             var totalRevenue = await _context.Sessions
@@ -101,14 +101,17 @@ namespace kaizenbackend.Controllers
 
             var users = await _context.Users
                 .OrderBy(u => u.Role)
-                .ThenBy(u => u.FullName)
+                .ThenBy(u => u.FirstName)
                 .Select(u => new
                 {
                     u.Id,
-                    u.FullName,
+                    u.FirstName,
+                    u.LastName,
+                    FullName = u.FirstName + " " + u.LastName,
                     u.Email,
                     u.Role,
                     u.DateRegistered,
+                    u.PhoneNumber,
                     profile = u.ProfessionalProfile != null ? new
                     {
                         u.ProfessionalProfile.Bio,
@@ -120,7 +123,225 @@ namespace kaizenbackend.Controllers
             return Ok(users);
         }
 
-        // DELETE: api/admin/users/{id}
+        // GET: api/admin/users/{id}
+        [HttpGet("users/{id}")]
+        public async Task<IActionResult> GetUserById(int id)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+            if (user == null)
+                return NotFound(new { message = "User not found" });
+
+            ProfessionalProfile? professionalProfile = null;
+            int currentSplitPercentage = 60;
+
+            if (user.Role == "Professional")
+            {
+                professionalProfile = await _context.ProfessionalProfiles
+                    .FirstOrDefaultAsync(p => p.UserId == id);
+
+                Console.WriteLine($"=== DEBUG: Professional ID {id} ===");
+                Console.WriteLine($"PaymentMethod from DB: '{professionalProfile?.PaymentMethod}'");
+                Console.WriteLine($"PaymentAccount from DB: '{professionalProfile?.PaymentAccount}'");
+                Console.WriteLine($"Bio from DB: '{professionalProfile?.Bio}'");
+
+                currentSplitPercentage = professionalProfile?.CustomSplitPercentage ??
+                    (professionalProfile?.AverageRating > 0
+                        ? GetPercentageFromRating(professionalProfile.AverageRating)
+                        : 60);
+            }
+
+            var response = new
+            {
+                user.Id,
+                user.FirstName,
+                user.LastName,
+                FullName = user.FirstName + " " + user.LastName,
+                user.Email,
+                user.Role,
+                user.DateRegistered,
+                user.PhoneNumber,
+                professionalProfile = professionalProfile != null ? new
+                {
+                    professionalProfile.Bio,
+                    professionalProfile.Specialization,
+                    PaymentMethod = professionalProfile.PaymentMethod ?? "",
+                    PaymentAccount = professionalProfile.PaymentAccount ?? "",
+                    professionalProfile.AverageRating,
+                    professionalProfile.CustomSplitPercentage,
+                    professionalProfile.TotalEarnings,
+                    professionalProfile.PendingPayout,
+                    professionalProfile.PaidOut,
+                    currentSplitPercentage
+                } : null
+            };
+
+            Console.WriteLine($"Response professionalProfile: {System.Text.Json.JsonSerializer.Serialize(response.professionalProfile)}");
+
+            return Ok(response);
+        }
+
+        // GET: api/admin/users/{id}/sessions
+        [HttpGet("users/{id}/sessions")]
+        public async Task<IActionResult> GetUserSessions(int id)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+                return NotFound(new { message = "User not found" });
+
+            if (user.Role == "Professional")
+            {
+                var sessions = await _context.Sessions
+                    .Where(s => s.ProfessionalId == id)
+                    .Include(s => s.Client)
+                    .OrderByDescending(s => s.SessionDate)
+                    .Select(s => new
+                    {
+                        s.Id,
+                        s.SessionDate,
+                        s.Amount,
+                        s.Status,
+                        s.PaymentStatus,
+                        s.PayoutStatus,
+                        s.ProfessionalEarnings,
+                        s.PlatformFee,
+                        s.Notes,
+                        clientName = s.Client.FirstName + " " + s.Client.LastName,
+                        clientEmail = s.Client.Email,
+                        clientFirstName = s.Client.FirstName,
+                        clientLastName = s.Client.LastName
+                    })
+                    .ToListAsync();
+
+                return Ok(sessions);
+            }
+            else
+            {
+                var sessions = await _context.Sessions
+                    .Where(s => s.ClientId == id)
+                    .Include(s => s.Professional)
+                    .OrderByDescending(s => s.SessionDate)
+                    .Select(s => new
+                    {
+                        s.Id,
+                        s.SessionDate,
+                        s.Amount,
+                        s.Status,
+                        s.PaymentStatus,
+                        s.Notes,
+                        professionalName = s.Professional.FirstName + " " + s.Professional.LastName,
+                        professionalEmail = s.Professional.Email,
+                        professionalFirstName = s.Professional.FirstName,
+                        professionalLastName = s.Professional.LastName
+                    })
+                    .ToListAsync();
+
+                return Ok(sessions);
+            }
+        }
+
+        // GET: api/admin/professionals/{id}/ratings
+        [HttpGet("professionals/{id}/ratings")]
+        public async Task<IActionResult> GetProfessionalRatings(int id)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var professional = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
+
+            if (professional == null)
+                return NotFound(new { message = "Professional not found" });
+
+            var ratings = await _context.Ratings
+                .Where(r => r.ProfessionalId == id)
+                .Include(r => r.Client)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new
+                {
+                    r.Id,
+                    rating      = r.RatingValue,
+                    review      = r.Review,
+                    createdAt   = r.CreatedAt,
+                    clientName = r.Client.FirstName + " " + r.Client.LastName,
+                    clientEmail = r.Client.Email,
+                    clientFirstName = r.Client.FirstName,
+                    clientLastName = r.Client.LastName
+                })
+                .ToListAsync();
+
+            var averageRating = ratings.Any()
+                ? ratings.Average(r => r.rating)
+                : 0;
+
+            return Ok(new
+            {
+                professionalId   = id,
+                professionalName = professional.FirstName + " " + professional.LastName,
+                professionalFirstName = professional.FirstName,
+                professionalLastName = professional.LastName,
+                averageRating    = Math.Round(averageRating, 1),
+                totalRatings     = ratings.Count,
+                ratings          = ratings
+            });
+        }
+
+        // POST: api/admin/professionals/{id}/process-payout
+        [HttpPost("professionals/{id}/process-payout")]
+        public async Task<IActionResult> ProcessProfessionalPayout(int id, [FromBody] PayoutRequest? request)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var professional = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
+
+            if (professional == null)
+                return NotFound(new { message = "Professional not found" });
+
+            var professionalProfile = await _context.ProfessionalProfiles
+                .FirstOrDefaultAsync(p => p.UserId == id);
+
+            var pendingSessions = await _context.Sessions
+                .Where(s => s.ProfessionalId == id
+                    && s.PaymentStatus == "Paid"
+                    && s.PayoutStatus == "Pending")
+                .ToListAsync();
+
+            if (pendingSessions.Count == 0)
+                return BadRequest(new { message = "No pending payouts for this professional." });
+
+            decimal totalPayoutAmount = pendingSessions.Sum(s => s.ProfessionalEarnings);
+            int sessionCount = pendingSessions.Count;
+
+            foreach (var session in pendingSessions)
+            {
+                session.PayoutStatus = "PaidOut";
+                session.UpdatedAt    = DateTime.UtcNow;
+            }
+
+            if (professionalProfile != null)
+            {
+                professionalProfile.PendingPayout -= totalPayoutAmount;
+                professionalProfile.PaidOut       += totalPayoutAmount;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message             = $"Payout processed for {professional.FirstName} {professional.LastName}.",
+                professionalId      = id,
+                professionalName    = professional.FirstName + " " + professional.LastName,
+                sessionsProcessed   = sessionCount,
+                totalAmount         = totalPayoutAmount
+            });
+        }
+
+        // UPDATED DELETE: api/admin/users/{id} - Improved with proper cleanup
         [HttpDelete("users/{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
@@ -128,15 +349,48 @@ namespace kaizenbackend.Controllers
 
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (userIdClaim != null && int.Parse(userIdClaim) == id)
-                return BadRequest("You cannot delete your own admin account.");
+                return BadRequest(new { message = "You cannot delete your own account from here. Use Delete Account in the sidebar." });
 
-            var user = await _context.Users.FindAsync(id);
-            if (user == null) return NotFound("User not found.");
+            var user = await _context.Users
+                .Include(u => u.ClientProfile)
+                .Include(u => u.ProfessionalProfile)
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+            if (user == null) return NotFound(new { message = "User not found." });
+
+            // Remove related data first to avoid FK constraint errors
+            var sessions = await _context.Sessions
+                .Where(s => s.ClientId == id || s.ProfessionalId == id)
+                .ToListAsync();
+            _context.Sessions.RemoveRange(sessions);
+
+            var assessments = await _context.SelfAssessments
+                .Where(a => a.UserId == id).ToListAsync();
+            _context.SelfAssessments.RemoveRange(assessments);
+
+            var journals = await _context.JournalEntries
+                .Where(j => j.UserId == id).ToListAsync();
+            _context.JournalEntries.RemoveRange(journals);
+
+            var resources = await _context.Resources
+                .Where(r => r.UploadedBy == id).ToListAsync();
+            _context.Resources.RemoveRange(resources);
+
+            if (user.ClientProfile != null)
+                _context.ClientProfiles.Remove(user.ClientProfile);
+
+            if (user.ProfessionalProfile != null)
+                _context.ProfessionalProfiles.Remove(user.ProfessionalProfile);
+
+            var adminRecord = await _context.Admins.FirstOrDefaultAsync(a => a.UserId == id);
+            if (adminRecord != null)
+                _context.Admins.Remove(adminRecord);
 
             _context.Users.Remove(user);
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = $"{user.FullName} has been removed from the system." });
+            string name = $"{user.FirstName} {user.LastName}".Trim();
+            return Ok(new { message = $"{name} has been permanently removed from the system." });
         }
 
         // GET: api/admin/sessions
@@ -161,13 +415,17 @@ namespace kaizenbackend.Controllers
                     client = new
                     {
                         s.Client.Id,
-                        s.Client.FullName,
+                        ClientName = s.Client.FirstName + " " + s.Client.LastName,
+                        ClientFirstName = s.Client.FirstName,
+                        ClientLastName = s.Client.LastName,
                         s.Client.Email
                     },
                     professional = new
                     {
                         s.Professional.Id,
-                        s.Professional.FullName,
+                        ProfessionalName = s.Professional.FirstName + " " + s.Professional.LastName,
+                        ProfessionalFirstName = s.Professional.FirstName,
+                        ProfessionalLastName = s.Professional.LastName,
                         s.Professional.Email
                     }
                 })
@@ -202,7 +460,9 @@ namespace kaizenbackend.Controllers
                     user = new
                     {
                         a.User.Id,
-                        a.User.FullName,
+                        UserName = a.User.FirstName + " " + a.User.LastName,
+                        a.User.FirstName,
+                        a.User.LastName,
                         a.User.Email
                     }
                 })
@@ -232,7 +492,9 @@ namespace kaizenbackend.Controllers
                     uploadedBy = new
                     {
                         r.Uploader.Id,
-                        r.Uploader.FullName,
+                        UploaderName = r.Uploader.FirstName + " " + r.Uploader.LastName,
+                        r.Uploader.FirstName,
+                        r.Uploader.LastName,
                         r.Uploader.Email
                     }
                 })
@@ -255,5 +517,21 @@ namespace kaizenbackend.Controllers
 
             return Ok(new { message = "Resource removed successfully." });
         }
+
+        // Helper
+        private int GetPercentageFromRating(decimal rating)
+        {
+            if (rating >= 5.0m) return 70;
+            if (rating >= 4.5m) return 65;
+            if (rating >= 4.0m) return 62;
+            if (rating >= 3.5m) return 60;
+            return 55;
+        }
+    }
+
+    public class PayoutRequest
+    {
+        public string? Notes { get; set; }
+        public string? PaymentReference { get; set; }
     }
 }

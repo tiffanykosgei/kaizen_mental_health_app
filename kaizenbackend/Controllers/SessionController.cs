@@ -5,6 +5,7 @@ using System.Security.Claims;
 using kaizenbackend.Data;
 using kaizenbackend.DTOs;
 using kaizenbackend.Models;
+using kaizenbackend.Services;
 
 namespace kaizenbackend.Controllers
 {
@@ -15,12 +16,15 @@ namespace kaizenbackend.Controllers
     {
         private readonly AppDbContext _context;
         private readonly TimeZoneInfo _eastAfricaTime;
+        private readonly IDailyService _dailyService;
+        private readonly ILogger<SessionController> _logger;
 
-        public SessionController(AppDbContext context)
+        public SessionController(AppDbContext context, IDailyService dailyService, ILogger<SessionController> logger)
         {
             _context = context;
-            
-            // Initialize Kenya timezone (EAT = UTC+3)
+            _dailyService = dailyService;
+            _logger = logger;
+
             try
             {
                 _eastAfricaTime = TimeZoneInfo.FindSystemTimeZoneById("E. Africa Standard Time");
@@ -33,13 +37,57 @@ namespace kaizenbackend.Controllers
                 }
                 catch
                 {
-                    // Fallback for Windows
-                    _eastAfricaTime = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+                    _eastAfricaTime = TimeZoneInfo.CreateCustomTimeZone("EAT", TimeSpan.FromHours(3), "East Africa Time", "EAT");
                 }
             }
         }
 
-        // GET: api/session/professionals
+        private async Task CreateVideoRoom(Session session)
+        {
+            try
+            {
+                if (session == null)
+                {
+                    _logger.LogWarning("CreateVideoRoom: Session is null");
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(session.MeetingUrl))
+                {
+                    _logger.LogInformation($"Session {session.Id} already has a meeting URL: {session.MeetingUrl}");
+                    return;
+                }
+
+                var roomName = $"kaizen-session-{session.Id}";
+                // Room expires 2 hours after session start (1hr session + 1hr buffer)
+                var expiryTime = session.SessionDate.AddHours(2);
+                if (expiryTime < DateTime.UtcNow)
+                    expiryTime = DateTime.UtcNow.AddHours(2);
+
+                int expiryMinutes = (int)(expiryTime - DateTime.UtcNow).TotalMinutes;
+                if (expiryMinutes < 60) expiryMinutes = 120;
+
+                _logger.LogInformation($"Creating Daily.co room '{roomName}' for session {session.Id}");
+
+                var result = await _dailyService.CreateRoom(roomName, expiryMinutes);
+
+                if (result.Success && !string.IsNullOrEmpty(result.RoomUrl))
+                {
+                    session.MeetingUrl = result.RoomUrl;
+                    session.MeetingRoomName = result.RoomName;
+                    _logger.LogInformation($"✅ Video room created for session {session.Id}: {result.RoomUrl}");
+                }
+                else
+                {
+                    _logger.LogError($"❌ Failed to create video room for session {session.Id}: {result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Exception creating video room for session {session.Id}");
+            }
+        }
+
         [HttpGet("professionals")]
         public async Task<IActionResult> GetProfessionals()
         {
@@ -48,12 +96,15 @@ namespace kaizenbackend.Controllers
                 .Select(u => new
                 {
                     u.Id,
-                    u.FullName,
+                    u.FirstName,
+                    u.LastName,
+                    FullName = u.FirstName + " " + u.LastName,
                     u.Email,
                     Profile = u.ProfessionalProfile != null ? new
                     {
                         u.ProfessionalProfile.Bio,
-                        u.ProfessionalProfile.Specialization
+                        u.ProfessionalProfile.Specialization,
+                        u.ProfessionalProfile.AverageRating
                     } : null
                 })
                 .ToListAsync();
@@ -61,131 +112,57 @@ namespace kaizenbackend.Controllers
             return Ok(professionals);
         }
 
-        // GET: api/session/all-sessions - ADMIN ENDPOINT (renamed for clarity)
-        [HttpGet("all-sessions")]
-        [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> GetAllSessions()
-        {
-            try
-            {
-                var sessions = await _context.Sessions
-                    .Include(s => s.Client)
-                    .Include(s => s.Professional)
-                    .ThenInclude(p => p.ProfessionalProfile)
-                    .OrderByDescending(s => s.SessionDate)
-                    .Select(s => new
-                    {
-                        s.Id,
-                        s.SessionDate,
-                        s.Status,
-                        s.PaymentStatus,
-                        s.Amount,
-                        s.PlatformFee,
-                        s.ProfessionalEarnings,
-                        s.PayoutStatus,
-                        s.Notes,
-                        s.CreatedAt,
-                        Client = new
-                        {
-                            s.Client.Id,
-                            s.Client.FullName,
-                            s.Client.Email
-                        },
-                        Professional = new
-                        {
-                            s.Professional.Id,
-                            s.Professional.FullName,
-                            s.Professional.Email,
-                            Specialization = s.Professional.ProfessionalProfile != null ? s.Professional.ProfessionalProfile.Specialization : null
-                        }
-                    })
-                    .ToListAsync();
-
-                return Ok(sessions);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error in GetAllSessions: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while fetching all sessions.", error = ex.Message });
-            }
-        }
-
-        // GET: api/session/available/{professionalId}
         [HttpGet("available/{professionalId}")]
         public async Task<IActionResult> GetAvailableSlots(int professionalId, DateTime? date)
         {
             try
             {
-                // Check if professional exists
                 var professional = await _context.Users
                     .FirstOrDefaultAsync(u => u.Id == professionalId && u.Role == "Professional");
 
                 if (professional == null)
                     return NotFound(new { message = "Professional not found." });
 
-                // Get current Kenya time
                 DateTime kenyaNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _eastAfricaTime);
-                
-                // Get the target date in Kenya time
+
                 DateTime targetKenyaDate;
                 if (date.HasValue)
-                {
-                    // Create a clean date with no time component
                     targetKenyaDate = new DateTime(date.Value.Year, date.Value.Month, date.Value.Day, 0, 0, 0, DateTimeKind.Unspecified);
-                }
                 else
-                {
                     targetKenyaDate = kenyaNow.Date;
-                }
-                
-                // Don't show past dates
+
                 if (targetKenyaDate.Date < kenyaNow.Date)
-                {
-                    return Ok(new
-                    {
-                        date = targetKenyaDate,
-                        availableSlots = new List<object>()
-                    });
-                }
-                
-                // Convert Kenya date to UTC for database query
+                    return Ok(new { date = targetKenyaDate, availableSlots = new List<object>() });
+
                 DateTime startOfDayUtc = TimeZoneInfo.ConvertTimeToUtc(targetKenyaDate, _eastAfricaTime);
                 DateTime endOfDayUtc = startOfDayUtc.AddDays(1);
 
-                // Get existing bookings for this professional on this date
                 var existingBookings = await _context.Sessions
-                    .Where(s => s.ProfessionalId == professionalId 
-                        && s.SessionDate >= startOfDayUtc 
+                    .Where(s => s.ProfessionalId == professionalId
+                        && s.SessionDate >= startOfDayUtc
                         && s.SessionDate < endOfDayUtc
                         && s.Status != "Cancelled")
                     .ToListAsync();
 
-                // Get booked hours in Kenya time
                 var bookedHours = existingBookings
                     .Select(s => TimeZoneInfo.ConvertTimeFromUtc(s.SessionDate, _eastAfricaTime).Hour)
                     .ToHashSet();
 
-                // Generate available time slots (9 AM to 5 PM in Kenya time)
                 var availableSlots = new List<object>();
-                
-                for (int hour = 9; hour <= 16; hour++) // 9 AM to 4 PM
+
+                for (int hour = 9; hour <= 16; hour++)
                 {
                     if (!bookedHours.Contains(hour))
                     {
-                        // Create the time in Kenya time
                         DateTime kenyaSlotTime = new DateTime(
-                            targetKenyaDate.Year, 
-                            targetKenyaDate.Month, 
-                            targetKenyaDate.Day, 
-                            hour, 0, 0, 
-                            DateTimeKind.Unspecified);
-                        
-                        // Convert to UTC for sending to frontend
+                            targetKenyaDate.Year, targetKenyaDate.Month, targetKenyaDate.Day,
+                            hour, 0, 0, DateTimeKind.Unspecified);
+
                         DateTime utcSlotTime = TimeZoneInfo.ConvertTimeToUtc(kenyaSlotTime, _eastAfricaTime);
-                        
+
                         string formattedTime = hour switch
                         {
-                            9 => "09:00 AM",
+                            9  => "09:00 AM",
                             10 => "10:00 AM",
                             11 => "11:00 AM",
                             12 => "12:00 PM",
@@ -193,34 +170,23 @@ namespace kaizenbackend.Controllers
                             14 => "02:00 PM",
                             15 => "03:00 PM",
                             16 => "04:00 PM",
-                            _ => $"{hour:00}:00 {(hour < 12 ? "AM" : "PM")}"
+                            _  => $"{hour:00}:00 {(hour < 12 ? "AM" : "PM")}"
                         };
-                        
-                        availableSlots.Add(new
-                        {
-                            time = utcSlotTime,
-                            formattedTime = formattedTime
-                        });
+
+                        availableSlots.Add(new { time = utcSlotTime, formattedTime });
                     }
                 }
 
-                return Ok(new
-                {
-                    date = targetKenyaDate,
-                    availableSlots = availableSlots
-                });
+                return Ok(new { date = targetKenyaDate, availableSlots });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in GetAvailableSlots: {ex.Message}");
-                Console.WriteLine(ex.StackTrace);
-                return StatusCode(500, new { message = "An error occurred while fetching available slots.", error = ex.Message });
+                return StatusCode(500, new { message = "Error fetching available slots.", error = ex.Message });
             }
         }
 
-        // POST: api/session/book
         [HttpPost("book")]
-        public async Task<IActionResult> BookSession([FromBody] CreateSessionDto request)
+        public async Task<IActionResult> BookSession(CreateSessionDto dto)
         {
             try
             {
@@ -232,88 +198,159 @@ namespace kaizenbackend.Controllers
                 if (role != "Client")
                     return Forbid("Only clients can book sessions.");
 
-                // Verify professional exists
                 var professional = await _context.Users
-                    .FirstOrDefaultAsync(u => u.Id == request.ProfessionalId && u.Role == "Professional");
+                    .FirstOrDefaultAsync(u => u.Id == dto.ProfessionalId && u.Role == "Professional");
 
                 if (professional == null)
                     return BadRequest("Selected professional not found.");
 
-                // Parse the session date - handle different formats
-                DateTime sessionDate;
-                try
-                {
-                    // Try to parse the date from the request
-                    sessionDate = request.SessionDate;
-                    
-                    // If the date is in UTC, convert to local for validation
-                    if (sessionDate.Kind == DateTimeKind.Utc)
-                    {
-                        sessionDate = sessionDate.ToLocalTime();
-                    }
-                }
-                catch (Exception)
-                {
-                    return BadRequest("Invalid session date format. Please use a valid date and time.");
-                }
+                DateTime utcReceived = dto.SessionDate.ToUniversalTime();
+                DateTime kenyaTime  = TimeZoneInfo.ConvertTimeFromUtc(utcReceived, _eastAfricaTime);
+                DateTime kenyaNow   = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _eastAfricaTime);
 
-                // Check if slot is within working hours (9 AM - 5 PM Kenya time)
-                int hour = sessionDate.Hour;
+                int hour = kenyaTime.Hour;
                 if (hour < 9 || hour >= 17)
-                    return BadRequest($"Sessions are only available between 9 AM and 5 PM (Kenya time). You selected {hour:00}:00");
+                    return BadRequest($"Sessions are only available between 9 AM and 5 PM Kenya time. You selected {hour:00}:00");
 
-                // Check if the date is in the past
-                if (sessionDate.Date < DateTime.Now.Date)
+                if (kenyaTime.Date < kenyaNow.Date)
                     return BadRequest("Cannot book sessions in the past.");
 
-                // Convert to UTC for database storage
-                DateTime utcSessionDate = sessionDate.ToUniversalTime();
+                if (kenyaTime.Date == kenyaNow.Date && kenyaTime <= kenyaNow)
+                    return BadRequest("Cannot book sessions in the past.");
 
-                // Check if slot is already booked
                 var existingSession = await _context.Sessions
-                    .FirstOrDefaultAsync(s => s.ProfessionalId == request.ProfessionalId 
-                        && s.SessionDate == utcSessionDate
+                    .FirstOrDefaultAsync(s => s.ProfessionalId == dto.ProfessionalId
+                        && s.SessionDate == utcReceived
                         && s.Status != "Cancelled");
 
                 if (existingSession != null)
                     return BadRequest("This time slot is already booked. Please select another time.");
 
-                // Create the session with UTC date
                 var session = new Session
                 {
-                    ClientId = clientId,
-                    ProfessionalId = request.ProfessionalId,
-                    SessionDate = utcSessionDate,
-                    Status = "Pending",
-                    PaymentStatus = "Pending",
-                    Amount = 1500,
-                    Notes = request.Notes ?? "",
-                    CreatedAt = DateTime.UtcNow
+                    ClientId       = clientId,
+                    ProfessionalId = dto.ProfessionalId,
+                    SessionDate    = utcReceived,
+                    Status         = "Pending",
+                    PaymentStatus  = "Pending",
+                    Amount         = 10,
+                    Notes          = dto.Notes,
+                    CreatedAt      = DateTime.UtcNow
                 };
 
                 _context.Sessions.Add(session);
                 await _context.SaveChangesAsync();
 
-                // Format the date for display in Kenya time
-                string displayDate = sessionDate.ToString("dd MMM yyyy, hh:mm tt");
+                string displayDate = kenyaTime.ToString("dd MMM yyyy, hh:mm tt");
 
                 return Ok(new
                 {
-                    message = "Session booked successfully! Please complete payment to confirm your booking.",
-                    sessionId = session.Id,
-                    amount = session.Amount,
+                    message       = "Session booked! Please wait for the professional to confirm, then complete payment.",
+                    sessionId     = session.Id,
+                    amount        = session.Amount,
                     paymentStatus = session.PaymentStatus,
-                    sessionDate = displayDate
+                    sessionDate   = displayDate
                 });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in BookSession: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while booking the session.", error = ex.Message });
+                return StatusCode(500, new { message = "Error booking session.", error = ex.Message });
             }
         }
-                   
-        // GET: api/session/my-sessions
+
+        // Correct flow: Professional confirms → client pays → video room created.
+        // Video room is NOT created on confirmation alone — only if payment is already done.
+        [HttpPut("{id}/status")]
+        public async Task<IActionResult> UpdateStatus(int id, UpdateSessionDto dto)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null) return Unauthorized();
+                int userId = int.Parse(userIdClaim);
+
+                var session = await _context.Sessions.FindAsync(id);
+                if (session == null) return NotFound("Session not found.");
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value;
+                if (role != "Professional" || session.ProfessionalId != userId)
+                    return Forbid("Only the assigned professional can update session status.");
+
+                var allowedStatuses = new[] { "Confirmed", "Completed", "Cancelled" };
+                if (!allowedStatuses.Contains(dto.Status))
+                    return BadRequest("Status must be Confirmed, Completed or Cancelled.");
+
+                session.Status    = dto.Status;
+                session.UpdatedAt = DateTime.UtcNow;
+
+                if (dto.Notes != null)
+                    session.Notes = dto.Notes;
+
+                _logger.LogInformation($"UpdateStatus: Session {session.Id} → {dto.Status}, PaymentStatus: {session.PaymentStatus}");
+
+                // Only create video room if BOTH confirmed AND already paid.
+                // Normal flow: payment comes after confirmation, so room is created in PaymentController callback.
+                // This handles the edge case where payment was completed before professional confirmed.
+                if (dto.Status == "Confirmed"
+                    && session.PaymentStatus == "Paid"
+                    && string.IsNullOrEmpty(session.MeetingUrl))
+                {
+                    _logger.LogInformation($"Session {session.Id} already paid — creating video room on confirmation");
+                    await CreateVideoRoom(session);
+                }
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message         = $"Session {dto.Status.ToLower()} successfully.",
+                    meetingUrl      = session.MeetingUrl,
+                    meetingRoomName = session.MeetingRoomName,
+                    awaitingPayment = dto.Status == "Confirmed" && session.PaymentStatus != "Paid"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error updating session status.", error = ex.Message });
+            }
+        }
+
+        [HttpPost("fix-meeting/{sessionId}")]
+        [Authorize(Roles = "Admin,Professional")]
+        public async Task<IActionResult> FixMeetingUrl(int sessionId)
+        {
+            var session = await _context.Sessions.FindAsync(sessionId);
+            if (session == null) return NotFound("Session not found");
+
+            _logger.LogInformation($"FixMeetingUrl: Session {session.Id} - Status: {session.Status}, PaymentStatus: {session.PaymentStatus}");
+
+            if (session.Status == "Confirmed"
+                && session.PaymentStatus == "Paid"
+                && string.IsNullOrEmpty(session.MeetingUrl))
+            {
+                await CreateVideoRoom(session);
+                await _context.SaveChangesAsync();
+                return Ok(new
+                {
+                    message    = "Meeting URL created successfully",
+                    meetingUrl = session.MeetingUrl,
+                    sessionId  = session.Id
+                });
+            }
+
+            return Ok(new
+            {
+                message = session.MeetingUrl != null
+                    ? "Meeting URL already exists"
+                    : session.PaymentStatus != "Paid"
+                        ? "Cannot create room — payment not yet completed"
+                        : "Session not confirmed",
+                meetingUrl    = session.MeetingUrl,
+                status        = session.Status,
+                paymentStatus = session.PaymentStatus
+            });
+        }
+
         [HttpGet("my-sessions")]
         public async Task<IActionResult> GetMySessions()
         {
@@ -340,53 +377,65 @@ namespace kaizenbackend.Controllers
                         .Include(s => s.Client)
                         .Where(s => s.ProfessionalId == userId);
                 }
-                else
-                {
-                    return Forbid();
-                }
+                else return Forbid();
 
                 var sessions = await query
                     .OrderByDescending(s => s.SessionDate)
                     .ToListAsync();
 
+                var nowUtc = DateTime.UtcNow;
+
                 var result = sessions.Select(s => new
                 {
                     s.Id,
                     s.SessionDate,
-                    FormattedDate = TimeZoneInfo.ConvertTimeFromUtc(s.SessionDate, _eastAfricaTime).ToString("dd MMM yyyy, hh:mm tt"),
+                    FormattedDate = TimeZoneInfo.ConvertTimeFromUtc(s.SessionDate, _eastAfricaTime)
+                        .ToString("dd MMM yyyy, hh:mm tt"),
                     s.Status,
                     s.PaymentStatus,
                     s.Amount,
                     s.Notes,
-                    CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(s.CreatedAt, _eastAfricaTime).ToString("dd MMM yyyy, hh:mm tt"),
+                    s.MeetingUrl,
+                    s.MeetingRoomName,
+                    // CanJoin is true only within the 1-hour session window (5 min early → session end)
+                    CanJoin = !string.IsNullOrEmpty(s.MeetingUrl)
+                              && s.Status == "Confirmed"
+                              && s.PaymentStatus == "Paid"
+                              && nowUtc >= s.SessionDate.AddMinutes(-5)
+                              && nowUtc <= s.SessionDate.AddHours(1),
+                    CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(s.CreatedAt, _eastAfricaTime)
+                        .ToString("dd MMM yyyy, hh:mm tt"),
                     Client = role == "Professional" ? new
                     {
                         s.Client.Id,
-                        s.Client.FullName,
+                        ClientFullName  = s.Client.FirstName + " " + s.Client.LastName,
+                        ClientFirstName = s.Client.FirstName,
+                        ClientLastName  = s.Client.LastName,
                         s.Client.Email
-                    } : null,
+                    } : (object?)null,
                     Professional = role == "Client" ? new
                     {
                         s.Professional.Id,
-                        s.Professional.FullName,
+                        ProfessionalFullName  = s.Professional.FirstName + " " + s.Professional.LastName,
+                        ProfessionalFirstName = s.Professional.FirstName,
+                        ProfessionalLastName  = s.Professional.LastName,
                         s.Professional.Email,
-                        Bio = s.Professional.ProfessionalProfile != null ? s.Professional.ProfessionalProfile.Bio : null,
-                        Specialization = s.Professional.ProfessionalProfile != null ? s.Professional.ProfessionalProfile.Specialization : null
-                    } : null
+                        Bio            = s.Professional.ProfessionalProfile?.Bio,
+                        Specialization = s.Professional.ProfessionalProfile?.Specialization
+                    } : (object?)null
                 });
 
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in GetMySessions: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while fetching sessions.", error = ex.Message });
+                return StatusCode(500, new { message = "Error fetching sessions.", error = ex.Message });
             }
         }
 
-        // PUT: api/session/{id}/status
-        [HttpPut("{id}/status")]
-        public async Task<IActionResult> UpdateStatus(int id, UpdateSessionDto dto)
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Client")]
+        public async Task<IActionResult> DeleteSession(int id)
         {
             try
             {
@@ -394,37 +443,45 @@ namespace kaizenbackend.Controllers
                 if (userIdClaim == null) return Unauthorized();
                 int userId = int.Parse(userIdClaim);
 
-                var session = await _context.Sessions.FindAsync(id);
+                var session = await _context.Sessions
+                    .FirstOrDefaultAsync(s => s.Id == id && s.ClientId == userId);
+
                 if (session == null)
-                    return NotFound("Session not found.");
+                    return NotFound(new { message = "Session not found or you don't have permission to delete it." });
 
-                var role = User.FindFirst(ClaimTypes.Role)?.Value;
+                if (session.Status == "Completed")
+                    return BadRequest(new { message = "Cannot delete a completed session." });
 
-                // Only professional can update status of their sessions
-                if (role != "Professional" || session.ProfessionalId != userId)
-                    return Forbid("Only the assigned professional can update session status.");
+                if (session.Status == "Confirmed")
+                    return BadRequest(new { message = "Cannot delete a confirmed session. Please contact the professional to cancel." });
 
-                var allowedStatuses = new[] { "Confirmed", "Completed", "Cancelled" };
-                if (!allowedStatuses.Contains(dto.Status))
-                    return BadRequest("Status must be Confirmed, Completed, or Cancelled.");
+                if (session.PaymentStatus == "Paid")
+                    return BadRequest(new { message = "Cannot delete a session that has already been paid for." });
 
-                session.Status = dto.Status;
-                session.UpdatedAt = DateTime.UtcNow;
-                if (dto.Notes != null)
-                    session.Notes = dto.Notes;
-
+                _context.Sessions.Remove(session);
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = $"Session {dto.Status.ToLower()} successfully." });
+                if (!string.IsNullOrEmpty(session.MeetingRoomName))
+                {
+                    try
+                    {
+                        await _dailyService.DeleteRoom(session.MeetingRoomName);
+                        _logger.LogInformation($"Deleted Daily room: {session.MeetingRoomName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"Failed to delete Daily room: {ex.Message}");
+                    }
+                }
+
+                return Ok(new { message = "Session cancelled successfully." });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in UpdateStatus: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while updating session status.", error = ex.Message });
+                return StatusCode(500, new { message = "Error deleting session.", error = ex.Message });
             }
         }
 
-        // GET: api/session/{id}
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
@@ -440,45 +497,56 @@ namespace kaizenbackend.Controllers
                     .ThenInclude(p => p.ProfessionalProfile)
                     .FirstOrDefaultAsync(s => s.Id == id);
 
-                if (session == null)
-                    return NotFound("Session not found.");
+                if (session == null) return NotFound("Session not found.");
 
-                // Check if user is authorized to view this session
                 var role = User.FindFirst(ClaimTypes.Role)?.Value;
                 if (session.ClientId != userId && session.ProfessionalId != userId && role != "Admin")
                     return Forbid();
 
+                var nowUtc = DateTime.UtcNow;
+
                 return Ok(new
                 {
                     session.Id,
-                    SessionDate = session.SessionDate,
-                    FormattedDate = TimeZoneInfo.ConvertTimeFromUtc(session.SessionDate, _eastAfricaTime).ToString("dd MMM yyyy, hh:mm tt"),
+                    session.SessionDate,
+                    FormattedDate = TimeZoneInfo.ConvertTimeFromUtc(session.SessionDate, _eastAfricaTime)
+                        .ToString("dd MMM yyyy, hh:mm tt"),
                     session.Status,
                     session.PaymentStatus,
                     session.Amount,
                     session.Notes,
-                    CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(session.CreatedAt, _eastAfricaTime).ToString("dd MMM yyyy, hh:mm tt"),
-                    UpdatedAt = session.UpdatedAt.HasValue ? TimeZoneInfo.ConvertTimeFromUtc(session.UpdatedAt.Value, _eastAfricaTime).ToString("dd MMM yyyy, hh:mm tt") : null,
+                    session.MeetingUrl,
+                    session.MeetingRoomName,
+                    CanJoin = !string.IsNullOrEmpty(session.MeetingUrl)
+                              && session.Status == "Confirmed"
+                              && session.PaymentStatus == "Paid"
+                              && nowUtc >= session.SessionDate.AddMinutes(-5)
+                              && nowUtc <= session.SessionDate.AddHours(1),
+                    CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(session.CreatedAt, _eastAfricaTime)
+                        .ToString("dd MMM yyyy, hh:mm tt"),
+                    UpdatedAt = session.UpdatedAt.HasValue
+                        ? TimeZoneInfo.ConvertTimeFromUtc(session.UpdatedAt.Value, _eastAfricaTime)
+                            .ToString("dd MMM yyyy, hh:mm tt")
+                        : null,
                     Client = new
                     {
                         session.Client.Id,
-                        session.Client.FullName,
+                        ClientFullName  = session.Client.FirstName + " " + session.Client.LastName,
                         session.Client.Email
                     },
                     Professional = new
                     {
                         session.Professional.Id,
-                        session.Professional.FullName,
+                        ProfessionalFullName  = session.Professional.FirstName + " " + session.Professional.LastName,
                         session.Professional.Email,
-                        Bio = session.Professional.ProfessionalProfile != null ? session.Professional.ProfessionalProfile.Bio : null,
-                        Specialization = session.Professional.ProfessionalProfile != null ? session.Professional.ProfessionalProfile.Specialization : null
+                        Bio            = session.Professional.ProfessionalProfile?.Bio,
+                        Specialization = session.Professional.ProfessionalProfile?.Specialization
                     }
                 });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in GetById: {ex.Message}");
-                return StatusCode(500, new { message = "An error occurred while fetching session details.", error = ex.Message });
+                return StatusCode(500, new { message = "Error fetching session.", error = ex.Message });
             }
         }
     }

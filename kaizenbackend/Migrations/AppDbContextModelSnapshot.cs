@@ -87,6 +87,39 @@ namespace kaizenbackend.Migrations
                     b.ToTable("ClientProfiles");
                 });
 
+            modelBuilder.Entity("kaizenbackend.Models.EmailVerification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("TempRegistrationData")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("EmailVerifications");
+                });
+
             modelBuilder.Entity("kaizenbackend.Models.JournalEntry", b =>
                 {
                     b.Property<int>("Id")
@@ -146,7 +179,7 @@ namespace kaizenbackend.Migrations
                             Id = 1,
                             DefaultPlatformPercentage = 40,
                             DefaultProfessionalPercentage = 60,
-                            UpdatedAt = new DateTime(2026, 4, 6, 7, 57, 33, 69, DateTimeKind.Utc).AddTicks(8945)
+                            UpdatedAt = new DateTime(2026, 4, 13, 7, 31, 45, 69, DateTimeKind.Utc).AddTicks(8401)
                         });
                 });
 
@@ -226,6 +259,9 @@ namespace kaizenbackend.Migrations
                     b.Property<int>("SessionId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId");
@@ -245,6 +281,9 @@ namespace kaizenbackend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<decimal>("AverageRating")
+                        .HasColumnType("numeric");
+
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasColumnType("text");
@@ -259,6 +298,9 @@ namespace kaizenbackend.Migrations
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("TotalRatings")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -430,6 +472,12 @@ namespace kaizenbackend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("MeetingRoomName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MeetingUrl")
+                        .HasColumnType("text");
+
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
@@ -487,7 +535,11 @@ namespace kaizenbackend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("FullName")
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("LastName")
                         .IsRequired()
                         .HasColumnType("text");
 

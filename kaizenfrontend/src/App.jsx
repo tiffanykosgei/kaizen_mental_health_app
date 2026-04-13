@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
-import Register from './pages/Register';
+import RegisterClient from './pages/Register/RegisterClient';
+import RegisterProfessional from './pages/Register/RegisterProfessional';
+import RegisterAdmin from './pages/Register/RegisterAdmin';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Assessment from './pages/Assessment';
@@ -11,13 +13,17 @@ import UploadResource from './pages/UploadResource';
 import Journal from './pages/Journal';
 import ClientSessions from './pages/ClientSessions';
 import ProfessionalSessions from './pages/ProfessionalSessions';
-// AdminHome is no longer needed since /admin redirects to /dashboard
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminSessions from './pages/admin/AdminSessions';
 import AdminAssessments from './pages/admin/AdminAssessments';
 import AdminResources from './pages/admin/AdminResources';
 import AdminRevenue from './pages/admin/AdminRevenue';
 import AdminReports from './pages/admin/AdminReports';
+import ProfessionalPayment from './pages/ProfessionalPayment';
+import UserProfile from './pages/admin/UserProfile';
+import AdminPayouts from './pages/admin/AdminPayouts';
+import Profile from './pages/Profile';
+import CompleteProfile from './pages/CompleteProfile';
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -31,7 +37,16 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/register" element={<Register />} />
+          
+          {/* Role-based registration pages - NO role selection buttons inside */}
+          <Route path="/register/client" element={<RegisterClient />} />
+          <Route path="/register/professional" element={<RegisterProfessional />} />
+          <Route path="/register/admin" element={<RegisterAdmin />} />
+          
+          {/* Complete profile after Google auth */}
+          <Route path="/complete-profile" element={<CompleteProfile />} />
+          
+          {/* Login page */}
           <Route path="/login/:role" element={<Login />} />
           
           {/* Main dashboard for all users - shows image + wellness message */}
@@ -55,6 +70,10 @@ export default function App() {
           <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
           <Route path="/admin/revenue" element={<ProtectedRoute><AdminRevenue /></ProtectedRoute>} />
           <Route path="/admin/reports" element={<ProtectedRoute><AdminReports /></ProtectedRoute>} />
+          <Route path="/professional-payment" element={<ProtectedRoute><ProfessionalPayment /></ProtectedRoute>} />
+          <Route path="/admin/users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+          <Route path="/admin/payouts" element={<ProtectedRoute><AdminPayouts /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>

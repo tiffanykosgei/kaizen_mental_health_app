@@ -1,19 +1,40 @@
-using System;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace kaizenbackend.Models
 {
     public class Rating
     {
+        [Key]
         public int Id { get; set; }
+
+        [Required]
         public int SessionId { get; set; }
+
+        [Required]
         public int ClientId { get; set; }
+
+        [Required]
         public int ProfessionalId { get; set; }
-        public int RatingValue { get; set; }  // 1 to 5
+
+        [Required]
+        [Range(1, 5)]
+        public int RatingValue { get; set; }
+
         public string? Review { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        public Session Session { get; set; } = null!;
-        public User Client { get; set; } = null!;
-        public User Professional { get; set; } = null!;
+        public DateTime? UpdatedAt { get; set; }
+
+        // Navigation properties
+        [ForeignKey("SessionId")]
+        public virtual Session? Session { get; set; }
+
+        [ForeignKey("ClientId")]
+        public virtual User? Client { get; set; }
+
+        [ForeignKey("ProfessionalId")]
+        public virtual User? Professional { get; set; }
     }
 }
