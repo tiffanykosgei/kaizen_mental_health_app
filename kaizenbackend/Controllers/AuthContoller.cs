@@ -10,6 +10,7 @@ using kaizenbackend.DTOs;
 using kaizenbackend.Models;
 using Google.Apis.Auth;
 using kaizenbackend.Services;
+using System.Text.Json;
 
 namespace kaizenbackend.Controllers
 {
@@ -32,17 +33,14 @@ namespace kaizenbackend.Controllers
         [HttpPost("send-verification")]
         public async Task<IActionResult> SendVerification([FromBody] SendVerificationDto dto)
         {
-            // Check if email already exists
             var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
             if (existingUser != null)
             {
                 return BadRequest(new { message = "An account with this email already exists. Please login instead." });
             }
 
-            // Generate 6-digit code
             var code = new Random().Next(100000, 999999).ToString();
             
-            // Store verification record
             var verification = new EmailVerification
             {
                 Email = dto.Email,
@@ -55,14 +53,12 @@ namespace kaizenbackend.Controllers
             
             _context.EmailVerifications.Add(verification);
             
-            // Remove old unverified entries for same email
             var oldVerifications = _context.EmailVerifications
                 .Where(v => v.Email == dto.Email && !v.IsVerified && v.ExpiresAt < DateTime.UtcNow);
             _context.EmailVerifications.RemoveRange(oldVerifications);
             
             await _context.SaveChangesAsync();
             
-            // Send email
             var emailSent = await _emailService.SendVerificationCodeAsync(dto.Email, code);
             
             if (!emailSent)
@@ -92,7 +88,6 @@ namespace kaizenbackend.Controllers
                 return BadRequest(new { message = "Verification code has expired. Please request a new one." });
             }
             
-            // Mark as verified
             verification.IsVerified = true;
             await _context.SaveChangesAsync();
             
@@ -103,9 +98,8 @@ namespace kaizenbackend.Controllers
         [HttpPost("complete-registration")]
         public async Task<IActionResult> CompleteRegistration([FromBody] CompleteRegistrationDto dto)
         {
-            Console.WriteLine($"CompleteRegistration called for email: {dto.Email}, Role: {dto.Role}, IsGoogleUser: {dto.IsGoogleUser}");
+            Console.WriteLine($"CompleteRegistration called for email: {dto.Email}, Role: {dto.Role}");
 
-            // Validate password
             var passwordErrors = ValidatePassword(dto.Password);
             if (passwordErrors.Any())
                 return BadRequest(new { message = string.Join(" ", passwordErrors) });
@@ -113,7 +107,6 @@ namespace kaizenbackend.Controllers
             if (dto.Password != dto.ConfirmPassword)
                 return BadRequest(new { message = "Passwords do not match." });
 
-            // For non-Google users, verify email was verified
             if (!dto.IsGoogleUser)
             {
                 var verification = await _context.EmailVerifications
@@ -124,18 +117,15 @@ namespace kaizenbackend.Controllers
                     return BadRequest(new { message = "Please verify your email address first." });
                 }
                 
-                // Remove the verification record
                 _context.EmailVerifications.Remove(verification);
             }
 
-            // Check if user already exists
             var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
             if (existingUser != null)
             {
                 return BadRequest(new { message = "An account with this email already exists." });
             }
 
-            // Create user
             var user = new User
             {
                 FirstName = dto.FirstName,
@@ -150,7 +140,6 @@ namespace kaizenbackend.Controllers
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            // Create role-specific profile
             if (dto.Role == "Client")
             {
                 _context.ClientProfiles.Add(new ClientProfile { UserId = user.Id });
@@ -158,12 +147,23 @@ namespace kaizenbackend.Controllers
             }
             else if (dto.Role == "Professional")
             {
-                _context.ProfessionalProfiles.Add(new ProfessionalProfile
+                var professionalProfile = new ProfessionalProfile
                 {
                     UserId = user.Id,
                     Bio = dto.Bio ?? "",
-                    Specialization = dto.Specialization ?? ""
-                });
+                    Specialization = dto.Specialization ?? "",
+                    YearsOfExperience = dto.YearsOfExperience ?? "",
+                    Education = dto.Education ?? "",
+                    Certifications = dto.Certifications ?? "",
+                    LicenseNumber = dto.LicenseNumber ?? "",
+                    ProfessionalLinks = new ProfessionalLinks
+                    {
+                        Linkedin = dto.ProfessionalLinks?.Linkedin ?? "",
+                        Website = dto.ProfessionalLinks?.Website ?? "",
+                        Portfolio = dto.ProfessionalLinks?.Portfolio ?? ""
+                    }
+                };
+                _context.ProfessionalProfiles.Add(professionalProfile);
                 await _context.SaveChangesAsync();
             }
             else if (dto.Role == "Admin")
@@ -172,11 +172,8 @@ namespace kaizenbackend.Controllers
                 await _context.SaveChangesAsync();
             }
 
-            // Generate token and log them in
             var token = GenerateToken(user);
             string fullName = $"{user.FirstName} {user.LastName}".Trim();
-
-            Console.WriteLine($"User created successfully: {user.Email} with Role: {user.Role}");
 
             return Ok(new
             {
@@ -234,11 +231,9 @@ namespace kaizenbackend.Controllers
             var user = await _context.Users.FindAsync(userId);
             if (user == null) return NotFound("User not found.");
 
-            // Check if user is a Google user
             if (!string.IsNullOrEmpty(user.PasswordHash) && !user.PasswordHash.StartsWith("google_"))
                 return BadRequest(new { message = "You already have a password set." });
 
-            // Validate password strength
             var passwordErrors = ValidatePassword(dto.NewPassword);
             if (passwordErrors.Any())
                 return BadRequest(new { message = string.Join(" ", passwordErrors) });
@@ -273,12 +268,10 @@ namespace kaizenbackend.Controllers
                 return Unauthorized(new { message = "Invalid Google token. Please try again." });
             }
 
-            // Check if user already exists
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
 
             if (user == null)
             {
-                // New Google user - return data to complete registration
                 return Ok(new
                 {
                     requiresPassword = true,
@@ -292,7 +285,6 @@ namespace kaizenbackend.Controllers
                 });
             }
 
-            // Existing user - log them in normally
             var token = GenerateToken(user);
             string fullName = $"{user.FirstName} {user.LastName}".Trim();
 
@@ -307,7 +299,7 @@ namespace kaizenbackend.Controllers
             });
         }
 
-        // POST: api/auth/update-profile
+        // PUT: api/auth/update-profile
         [HttpPut("update-profile")]
         [Authorize]
         public async Task<IActionResult> UpdateProfile(UpdateProfileDto dto)
@@ -326,10 +318,33 @@ namespace kaizenbackend.Controllers
             if (!string.IsNullOrWhiteSpace(dto.LastName)) user.LastName = dto.LastName;
             if (!string.IsNullOrWhiteSpace(dto.PhoneNumber)) user.PhoneNumber = dto.PhoneNumber;
 
-            if (user.Role == "Professional" && user.ProfessionalProfile != null)
+            if (user.Role == "Professional")
             {
-                if (!string.IsNullOrWhiteSpace(dto.Bio)) user.ProfessionalProfile.Bio = dto.Bio;
-                if (!string.IsNullOrWhiteSpace(dto.Specialization)) user.ProfessionalProfile.Specialization = dto.Specialization;
+                if (user.ProfessionalProfile == null)
+                {
+                    user.ProfessionalProfile = new ProfessionalProfile { UserId = user.Id };
+                    _context.ProfessionalProfiles.Add(user.ProfessionalProfile);
+                }
+                
+                if (dto.Bio != null) user.ProfessionalProfile.Bio = dto.Bio;
+                if (dto.Specialization != null) user.ProfessionalProfile.Specialization = dto.Specialization;
+                if (dto.YearsOfExperience != null) user.ProfessionalProfile.YearsOfExperience = dto.YearsOfExperience;
+                if (dto.Education != null) user.ProfessionalProfile.Education = dto.Education;
+                if (dto.Certifications != null) user.ProfessionalProfile.Certifications = dto.Certifications;
+                if (dto.LicenseNumber != null) user.ProfessionalProfile.LicenseNumber = dto.LicenseNumber;
+                
+                if (dto.ProfessionalLinks != null)
+                {
+                    if (user.ProfessionalProfile.ProfessionalLinks == null)
+                        user.ProfessionalProfile.ProfessionalLinks = new ProfessionalLinks();
+                    
+                    if (dto.ProfessionalLinks.Linkedin != null)
+                        user.ProfessionalProfile.ProfessionalLinks.Linkedin = dto.ProfessionalLinks.Linkedin;
+                    if (dto.ProfessionalLinks.Website != null)
+                        user.ProfessionalProfile.ProfessionalLinks.Website = dto.ProfessionalLinks.Website;
+                    if (dto.ProfessionalLinks.Portfolio != null)
+                        user.ProfessionalProfile.ProfessionalLinks.Portfolio = dto.ProfessionalLinks.Portfolio;
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(dto.Password))
@@ -366,12 +381,9 @@ namespace kaizenbackend.Controllers
             if (user == null)
                 return NotFound(new { message = "User not found." });
 
-            // Check if user is a Google user (no password or starts with google_)
             bool isGoogleUser = string.IsNullOrEmpty(user.PasswordHash) || 
                                 user.PasswordHash.StartsWith("google_");
 
-            // For Google users, we don't require password verification
-            // For regular users, verify password
             if (!isGoogleUser)
             {
                 if (string.IsNullOrEmpty(dto.Password) || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
@@ -442,47 +454,88 @@ namespace kaizenbackend.Controllers
         [Authorize]
         public async Task<IActionResult> GetProfile()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (userIdClaim == null) return Unauthorized();
-            int userId = int.Parse(userIdClaim);
-
-            var user = await _context.Users
-                .Include(u => u.ClientProfile)
-                .Include(u => u.ProfessionalProfile)
-                .FirstOrDefaultAsync(u => u.Id == userId);
-
-            if (user == null) return NotFound("User not found.");
-
-            string fullName = $"{user.FirstName} {user.LastName}".Trim();
-
-            return Ok(new
+            try
             {
-                user.Id,
-                user.FirstName,
-                user.LastName,
-                FullName = fullName,
-                user.Email,
-                user.Role,
-                user.PhoneNumber,
-                user.DateRegistered,
-                ClientProfile = user.ClientProfile != null ? new
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim))
                 {
-                    user.ClientProfile.EmergencyContact,
-                    user.ClientProfile.EmergencyContactPhone,
-                    user.ClientProfile.Diagnoses,
-                    user.ClientProfile.CurrentMedications,
-                    user.ClientProfile.PreviousTherapy,
-                    user.ClientProfile.KnownTriggers,
-                    user.ClientProfile.MedicalNotes
-                } : null,
-                ProfessionalProfile = user.ProfessionalProfile != null ? new
+                    return Unauthorized(new { message = "User not authenticated" });
+                }
+                
+                int userId = int.Parse(userIdClaim);
+
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+                    
+                if (user == null)
                 {
-                    user.ProfessionalProfile.Bio,
-                    user.ProfessionalProfile.Specialization,
-                    user.ProfessionalProfile.PaymentMethod,
-                    user.ProfessionalProfile.PaymentAccount
-                } : null
-            });
+                    return NotFound(new { message = "User not found" });
+                }
+
+                // Get professional profile separately
+                ProfessionalProfile professionalProfile = null;
+                if (user.Role == "Professional")
+                {
+                    professionalProfile = await _context.ProfessionalProfiles
+                        .FirstOrDefaultAsync(p => p.UserId == userId);
+                    
+                    // Create profile if it doesn't exist
+                    if (professionalProfile == null)
+                    {
+                        professionalProfile = new ProfessionalProfile 
+                        { 
+                            UserId = user.Id,
+                            Bio = "",
+                            Specialization = "",
+                            YearsOfExperience = "",
+                            Education = "",
+                            Certifications = "",
+                            LicenseNumber = "",
+                            ProfessionalLinks = new ProfessionalLinks(),
+                            PaymentMethod = "Mpesa",
+                            PaymentAccount = ""
+                        };
+                        _context.ProfessionalProfiles.Add(professionalProfile);
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
+                // Build response
+                var response = new
+                {
+                    Id = user.Id,
+                    FirstName = user.FirstName ?? "",
+                    LastName = user.LastName ?? "",
+                    FullName = $"{user.FirstName} {user.LastName}".Trim(),
+                    Email = user.Email ?? "",
+                    Role = user.Role ?? "",
+                    PhoneNumber = user.PhoneNumber ?? "",
+                    DateRegistered = user.DateRegistered,
+                    ProfessionalProfile = professionalProfile != null ? new
+                    {
+                        Bio = professionalProfile.Bio ?? "",
+                        Specialization = professionalProfile.Specialization ?? "",
+                        YearsOfExperience = professionalProfile.YearsOfExperience ?? "",
+                        Education = professionalProfile.Education ?? "",
+                        Certifications = professionalProfile.Certifications ?? "",
+                        LicenseNumber = professionalProfile.LicenseNumber ?? "",
+                        ProfessionalLinks = new
+                        {
+                            Linkedin = professionalProfile.ProfessionalLinks?.Linkedin ?? "",
+                            Website = professionalProfile.ProfessionalLinks?.Website ?? "",
+                            Portfolio = professionalProfile.ProfessionalLinks?.Portfolio ?? ""
+                        }
+                    } : null
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetProfile: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, new { message = ex.Message });
+            }
         }
 
         private string GenerateToken(User user)
@@ -525,6 +578,41 @@ namespace kaizenbackend.Controllers
             if (!password.Any(ch => !char.IsLetterOrDigit(ch)))
                 errors.Add("Password must contain at least 1 special character.");
             return errors;
+        }
+
+        // PUT: api/auth/update-password
+        [HttpPut("update-password")]
+        [Authorize]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userIdClaim == null) return Unauthorized();
+            int userId = int.Parse(userIdClaim);
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) return NotFound(new { message = "User not found." });
+
+            if (string.IsNullOrEmpty(user.PasswordHash) || user.PasswordHash.StartsWith("google_"))
+            {
+                return BadRequest(new { message = "You don't have a password set. Please use 'Set Password' instead." });
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+            {
+                return BadRequest(new { message = "Current password is incorrect." });
+            }
+
+            var passwordErrors = ValidatePassword(dto.NewPassword);
+            if (passwordErrors.Any())
+                return BadRequest(new { message = string.Join(" ", passwordErrors) });
+
+            if (dto.NewPassword != dto.ConfirmPassword)
+                return BadRequest(new { message = "New passwords do not match." });
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Password changed successfully." });
         }
     }
 }

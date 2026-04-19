@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using kaizenbackend.Models;
+using System.Text.Json;
 
 namespace kaizenbackend.Data
 {
@@ -109,46 +110,122 @@ namespace kaizenbackend.Data
                 .Property(r => r.DateUploaded)
                 .HasColumnType("timestamp with time zone");
 
-                // Rating relationships
-modelBuilder.Entity<Rating>()
-    .HasOne(r => r.Session)
-    .WithMany()
-    .HasForeignKey(r => r.SessionId)
-    .OnDelete(DeleteBehavior.Cascade);
+            // Rating relationships
+            modelBuilder.Entity<Rating>()
+                .HasOne(r => r.Session)
+                .WithMany()
+                .HasForeignKey(r => r.SessionId)
+                .OnDelete(DeleteBehavior.Cascade);
 
-modelBuilder.Entity<Rating>()
-    .HasOne(r => r.Client)
-    .WithMany()
-    .HasForeignKey(r => r.ClientId)
-    .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Rating>()
+                .HasOne(r => r.Client)
+                .WithMany()
+                .HasForeignKey(r => r.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
 
-modelBuilder.Entity<Rating>()
-    .HasOne(r => r.Professional)
-    .WithMany()
-    .HasForeignKey(r => r.ProfessionalId)
-    .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Rating>()
+                .HasOne(r => r.Professional)
+                .WithMany()
+                .HasForeignKey(r => r.ProfessionalId)
+                .OnDelete(DeleteBehavior.Restrict);
 
-    // PlatformSetting - seed default values
-modelBuilder.Entity<PlatformSetting>().HasData(
-    new PlatformSetting { Id = 1, DefaultPlatformPercentage = 40, DefaultProfessionalPercentage = 60, UpdatedAt = DateTime.UtcNow }
-);
+            // PlatformSetting - seed default values
+            modelBuilder.Entity<PlatformSetting>().HasData(
+                new PlatformSetting { Id = 1, DefaultPlatformPercentage = 40, DefaultProfessionalPercentage = 60, UpdatedAt = DateTime.UtcNow }
+            );
 
-modelBuilder.Entity<ResourceRating>()
-    .HasOne(r => r.Resource)
-    .WithMany()
-    .HasForeignKey(r => r.ResourceId)
-    .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<ResourceRating>()
+                .HasOne(r => r.Resource)
+                .WithMany()
+                .HasForeignKey(r => r.ResourceId)
+                .OnDelete(DeleteBehavior.Cascade);
 
-modelBuilder.Entity<ResourceRating>()
-    .HasOne(r => r.User)
-    .WithMany()
-    .HasForeignKey(r => r.UserId)
-    .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<ResourceRating>()
+                .HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
 
-// Ensure one user can only rate a resource once
-modelBuilder.Entity<ResourceRating>()
-    .HasIndex(r => new { r.ResourceId, r.UserId })
-    .IsUnique();
+            // Ensure one user can only rate a resource once
+            modelBuilder.Entity<ResourceRating>()
+                .HasIndex(r => new { r.ResourceId, r.UserId })
+                .IsUnique();
+
+            // ============================================
+            // PROFESSIONAL PROFILE CONFIGURATIONS
+            // ============================================
+            
+            // Configure JSON serialization for ProfessionalLinks (stored as JSON)
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.ProfessionalLinks)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<ProfessionalLinks>(v, (JsonSerializerOptions)null) ?? new ProfessionalLinks()
+                );
+
+            // Configure decimal properties with precision
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.AverageRating)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(0);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.TotalEarnings)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(0);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.PendingPayout)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(0);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.PaidOut)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(0);
+
+            // Configure string properties with max lengths
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.Bio)
+                .HasMaxLength(5000);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.Specialization)
+                .HasMaxLength(200);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.YearsOfExperience)
+                .HasMaxLength(10);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.Education)
+                .HasMaxLength(2000);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.Certifications)
+                .HasMaxLength(2000);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.LicenseNumber)
+                .HasMaxLength(100);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.PaymentMethod)
+                .HasMaxLength(20)
+                .HasDefaultValue("Mpesa");
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.PaymentAccount)
+                .HasMaxLength(100);
+
+            // Add index for license number for faster lookups
+            modelBuilder.Entity<ProfessionalProfile>()
+                .HasIndex(p => p.LicenseNumber)
+                .IsUnique(false);
+
+            // Add index for specialization for faster filtering
+            modelBuilder.Entity<ProfessionalProfile>()
+                .HasIndex(p => p.Specialization);
         }
     }
 }

@@ -12,15 +12,10 @@ export default function UserProfile() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Wrap fetchUserData in useCallback to fix the React Hook dependency warning
   const fetchUserData = useCallback(async () => {
     setLoading(true);
     try {
       const userRes = await API.get(`/Admin/users/${userId}`);
-      console.log('User API Response - Full data:', userRes.data);
-      console.log('Professional Profile:', userRes.data.professionalProfile);
-      console.log('Payment Method:', userRes.data.professionalProfile?.paymentMethod);
-      console.log('Payment Account:', userRes.data.professionalProfile?.paymentAccount);
       setUser(userRes.data);
       
       const sessionsRes = await API.get(`/Admin/users/${userId}/sessions`);
@@ -36,45 +31,40 @@ export default function UserProfile() {
     } finally {
       setLoading(false);
     }
-  }, [userId]); // Only re-create when userId changes
+  }, [userId]);
 
   useEffect(() => {
     fetchUserData();
-  }, [fetchUserData]); // Now depends on the memoized fetchUserData
+  }, [fetchUserData]);
 
   const formatCurrency = (amount) => `KSh ${amount?.toLocaleString() || 0}`;
   const formatDate = (dateString) => new Date(dateString).toLocaleDateString('en-KE');
 
   const getStatusColor = (status) => {
     switch(status) {
-      case 'Confirmed': return { bg: '#E1F5EE', color: '#085041' };
-      case 'Pending': return { bg: '#FAEEDA', color: '#633806' };
-      case 'Completed': return { bg: '#EAF3DE', color: '#27500A' };
-      case 'Cancelled': return { bg: '#FCEBEB', color: '#791F1F' };
-      default: return { bg: '#F1EFE8', color: '#444441' };
+      case 'Confirmed': return { bg: 'var(--success-bg)', color: 'var(--success-text)' };
+      case 'Pending': return { bg: 'var(--warning-bg)', color: 'var(--warning-text)' };
+      case 'Completed': return { bg: 'var(--success-bg)', color: 'var(--success-text)' };
+      case 'Cancelled': return { bg: 'var(--error-bg)', color: 'var(--error-text)' };
+      default: return { bg: 'var(--bg-hover)', color: 'var(--text-secondary)' };
     }
   };
 
   const getPayoutStatusColor = (status) => {
     switch(status) {
-      case 'PaidOut': return { bg: '#E1F5EE', color: '#085041' };
-      case 'Pending': return { bg: '#FAEEDA', color: '#633806' };
-      default: return { bg: '#F1EFE8', color: '#444441' };
+      case 'PaidOut': return { bg: 'var(--success-bg)', color: 'var(--success-text)' };
+      case 'Pending': return { bg: 'var(--warning-bg)', color: 'var(--warning-text)' };
+      default: return { bg: 'var(--bg-hover)', color: 'var(--text-secondary)' };
     }
   };
 
   const getFormattedPaymentDisplay = () => {
-    if (!user?.professionalProfile?.paymentAccount) {
-      console.log('No payment account found in professionalProfile');
-      return null;
-    }
+    if (!user?.professionalProfile?.paymentAccount) return null;
     
     const account = user.professionalProfile.paymentAccount;
-    console.log('Raw payment account:', account);
     
     if (account.includes('|')) {
       const parts = account.split('|');
-      console.log('Bank parts:', parts);
       return {
         method: '🏦 Bank Transfer',
         detail: `${parts[0]} — ${parts[1]}`,
@@ -108,9 +98,9 @@ export default function UserProfile() {
     }
   };
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}>Loading profile...</div>;
-  if (error) return <div style={{ color: '#791F1F', padding: 40, textAlign: 'center' }}>{error}</div>;
-  if (!user) return <div style={{ padding: 40, textAlign: 'center' }}>User not found</div>;
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>Loading profile...</div>;
+  if (error) return <div style={{ color: 'var(--error-text)', padding: 40, textAlign: 'center' }}>{error}</div>;
+  if (!user) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>User not found</div>;
 
   const isProfessional = user.role === 'Professional';
   const totalEarnings = sessions.reduce((sum, s) => sum + (s.professionalEarnings || 0), 0);
@@ -121,14 +111,13 @@ export default function UserProfile() {
 
   return (
     <div>
-      {/* Header with back button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <button
           onClick={() => navigate('/admin/users')}
           style={{
             background: 'transparent',
-            color: '#6c63ff',
-            border: '1px solid #6c63ff',
+            color: 'var(--accent)',
+            border: '1px solid var(--accent)',
             padding: '6px 12px',
             borderRadius: 8,
             cursor: 'pointer',
@@ -137,21 +126,20 @@ export default function UserProfile() {
         >
           ← Back to Users
         </button>
-        <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0, color: '#1a202c' }}>User Profile</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>User Profile</h2>
       </div>
 
-      {/* User Info Card */}
-      <div style={{ background: 'white', borderRadius: 12, padding: 24, border: '1px solid #e2e8f0', marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+      <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 24, border: '1px solid var(--border)', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
           <div style={{
             width: 80,
             height: 80,
             borderRadius: '50%',
-            background: user.role === 'Professional' ? 'linear-gradient(135deg, #6c63ff, #3c3489)' : 'linear-gradient(135deg, #e91e8c, #c2185b)',
+            background: user.role === 'Professional' ? 'var(--gradient-primary)' : 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'white',
+            color: 'var(--text-inverse)',
             fontSize: 32,
             fontWeight: 600
           }}>
@@ -159,75 +147,73 @@ export default function UserProfile() {
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <h3 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: '#1a202c' }}>{user.fullName}</h3>
+              <h3 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>{user.fullName}</h3>
               <span style={{
                 padding: '4px 12px',
                 borderRadius: 20,
                 fontSize: 12,
                 fontWeight: 500,
-                background: user.role === 'Admin' ? '#EEEDFE' : user.role === 'Professional' ? '#E1F5EE' : '#FAEEDA',
-                color: user.role === 'Admin' ? '#3C3489' : user.role === 'Professional' ? '#085041' : '#633806'
+                background: user.role === 'Admin' ? 'var(--info-bg)' : user.role === 'Professional' ? 'var(--success-bg)' : 'var(--warning-bg)',
+                color: user.role === 'Admin' ? 'var(--info-text)' : user.role === 'Professional' ? 'var(--success-text)' : 'var(--warning-text)'
               }}>
                 {user.role}
               </span>
             </div>
-            <p style={{ fontSize: 13, color: '#718096', margin: '8px 0 4px' }}>{user.email}</p>
-            <p style={{ fontSize: 12, color: '#a0aec0', margin: 0 }}>Joined: {formatDate(user.dateRegistered)}</p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '8px 0 4px' }}>{user.email}</p>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>Joined: {formatDate(user.dateRegistered)}</p>
           </div>
           {isProfessional && (
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 24, fontWeight: 600, color: '#085041' }}>{formatCurrency(totalEarnings)}</div>
-              <div style={{ fontSize: 12, color: '#718096' }}>Total Earnings</div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: 'var(--success-text)' }}>{formatCurrency(totalEarnings)}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Total Earnings</div>
             </div>
           )}
         </div>
 
-        {/* Professional-specific details */}
         {isProfessional && user.professionalProfile && (
-          <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+          <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
               <div>
-                <p style={{ fontSize: 12, color: '#718096', marginBottom: 4 }}>Specialization</p>
-                <p style={{ fontSize: 14, fontWeight: 500, color: '#1a202c' }}>{user.professionalProfile.specialization || 'Not specified'}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Specialization</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{user.professionalProfile.specialization || 'Not specified'}</p>
               </div>
               <div>
-                <p style={{ fontSize: 12, color: '#718096', marginBottom: 4 }}>Bio</p>
-                <p style={{ fontSize: 14, color: '#1a202c' }}>{user.professionalProfile.bio || 'Not specified'}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Bio</p>
+                <p style={{ fontSize: 14, color: 'var(--text-primary)' }}>{user.professionalProfile.bio || 'Not specified'}</p>
               </div>
               <div>
-                <p style={{ fontSize: 12, color: '#718096', marginBottom: 4 }}>Average Rating</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Average Rating</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ display: 'flex', gap: 2 }}>
                     {[1, 2, 3, 4, 5].map(star => (
-                      <span key={star} style={{ fontSize: 16, color: star <= (user.professionalProfile.averageRating || 0) ? '#FFD700' : '#e2e8f0' }}>★</span>
+                      <span key={star} style={{ fontSize: 16, color: star <= (user.professionalProfile.averageRating || 0) ? '#FFD700' : 'var(--border)' }}>★</span>
                     ))}
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 500 }}>{user.professionalProfile.averageRating?.toFixed(1) || 'No ratings'}</span>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{user.professionalProfile.averageRating?.toFixed(1) || 'No ratings'}</span>
                 </div>
               </div>
               <div>
-                <p style={{ fontSize: 12, color: '#718096', marginBottom: 4 }}>Split Percentage</p>
-                <p style={{ fontSize: 14, fontWeight: 500, color: '#6c63ff' }}>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Split Percentage</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--accent)' }}>
                   {user.professionalProfile.customSplitPercentage || user.professionalProfile.currentSplitPercentage || 60}%
                 </p>
               </div>
             </div>
             
-            {/* Payment Method Section */}
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
-              <p style={{ fontSize: 12, color: '#718096', marginBottom: 8 }}>Payment Method</p>
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Payment Method</p>
               {paymentDisplay ? (
                 <div style={{ 
                   padding: '12px 16px', 
-                  background: '#E1F5EE', 
+                  background: 'var(--success-bg)', 
                   borderRadius: 8,
-                  border: '1px solid #1D9E75'
+                  border: '1px solid var(--secondary)'
                 }}>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: '#085041', margin: 0 }}>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--success-text)', margin: 0 }}>
                     {paymentDisplay.method} — {paymentDisplay.detail}
                   </p>
                   {paymentDisplay.sub && (
-                    <p style={{ fontSize: 12, color: '#085041', margin: '4px 0 0' }}>
+                    <p style={{ fontSize: 12, color: 'var(--success-text)', margin: '4px 0 0' }}>
                       {paymentDisplay.sub}
                     </p>
                   )}
@@ -235,11 +221,11 @@ export default function UserProfile() {
               ) : (
                 <div style={{ 
                   padding: '12px 16px', 
-                  background: '#FAEEDA', 
+                  background: 'var(--warning-bg)', 
                   borderRadius: 8,
-                  border: '1px solid #EF9F27'
+                  border: '1px solid var(--warning-text)'
                 }}>
-                  <p style={{ fontSize: 14, color: '#633806', margin: 0 }}>
+                  <p style={{ fontSize: 14, color: 'var(--warning-text)', margin: 0 }}>
                     ⚠️ No payment method set up yet
                   </p>
                 </div>
@@ -249,15 +235,14 @@ export default function UserProfile() {
         )}
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, borderBottom: '1px solid #e2e8f0' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, borderBottom: '1px solid var(--border)' }}>
         <button
           onClick={() => setActiveTab('overview')}
           style={{
             background: 'transparent',
-            color: activeTab === 'overview' ? '#6c63ff' : '#718096',
+            color: activeTab === 'overview' ? 'var(--accent)' : 'var(--text-muted)',
             border: 'none',
-            borderBottom: activeTab === 'overview' ? '2px solid #6c63ff' : '2px solid transparent',
+            borderBottom: activeTab === 'overview' ? '2px solid var(--accent)' : '2px solid transparent',
             padding: '8px 0',
             marginRight: 16,
             cursor: 'pointer'
@@ -269,9 +254,9 @@ export default function UserProfile() {
           onClick={() => setActiveTab('sessions')}
           style={{
             background: 'transparent',
-            color: activeTab === 'sessions' ? '#6c63ff' : '#718096',
+            color: activeTab === 'sessions' ? 'var(--accent)' : 'var(--text-muted)',
             border: 'none',
-            borderBottom: activeTab === 'sessions' ? '2px solid #6c63ff' : '2px solid transparent',
+            borderBottom: activeTab === 'sessions' ? '2px solid var(--accent)' : '2px solid transparent',
             padding: '8px 0',
             marginRight: 16,
             cursor: 'pointer'
@@ -284,9 +269,9 @@ export default function UserProfile() {
             onClick={() => setActiveTab('ratings')}
             style={{
               background: 'transparent',
-              color: activeTab === 'ratings' ? '#6c63ff' : '#718096',
+              color: activeTab === 'ratings' ? 'var(--accent)' : 'var(--text-muted)',
               border: 'none',
-              borderBottom: activeTab === 'ratings' ? '2px solid #6c63ff' : '2px solid transparent',
+              borderBottom: activeTab === 'ratings' ? '2px solid var(--accent)' : '2px solid transparent',
               padding: '8px 0',
               marginRight: 16,
               cursor: 'pointer'
@@ -300,9 +285,9 @@ export default function UserProfile() {
             onClick={() => setActiveTab('payouts')}
             style={{
               background: 'transparent',
-              color: activeTab === 'payouts' ? '#6c63ff' : '#718096',
+              color: activeTab === 'payouts' ? 'var(--accent)' : 'var(--text-muted)',
               border: 'none',
-              borderBottom: activeTab === 'payouts' ? '2px solid #6c63ff' : '2px solid transparent',
+              borderBottom: activeTab === 'payouts' ? '2px solid var(--accent)' : '2px solid transparent',
               padding: '8px 0',
               marginRight: 16,
               cursor: 'pointer'
@@ -313,45 +298,43 @@ export default function UserProfile() {
         )}
       </div>
 
-      {/* Overview Tab */}
       {activeTab === 'overview' && (
-        <div style={{ background: 'white', borderRadius: 12, padding: 24, border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Activity Summary</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-            <div style={{ textAlign: 'center', padding: 16, background: '#f7f9fc', borderRadius: 10 }}>
-              <p style={{ fontSize: 24, fontWeight: 600, color: '#6c63ff', margin: 0 }}>{totalSessions}</p>
-              <p style={{ fontSize: 12, color: '#718096', marginTop: 4 }}>Total Sessions</p>
+        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 24, border: '1px solid var(--border)' }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)' }}>Activity Summary</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
+            <div style={{ textAlign: 'center', padding: 16, background: 'var(--bg-secondary)', borderRadius: 10 }}>
+              <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--accent)', margin: 0 }}>{totalSessions}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Total Sessions</p>
             </div>
-            <div style={{ textAlign: 'center', padding: 16, background: '#f7f9fc', borderRadius: 10 }}>
-              <p style={{ fontSize: 24, fontWeight: 600, color: '#085041', margin: 0 }}>{completedSessions}</p>
-              <p style={{ fontSize: 12, color: '#718096', marginTop: 4 }}>Completed Sessions</p>
+            <div style={{ textAlign: 'center', padding: 16, background: 'var(--bg-secondary)', borderRadius: 10 }}>
+              <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--success-text)', margin: 0 }}>{completedSessions}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Completed Sessions</p>
             </div>
             {isProfessional && (
-              <div style={{ textAlign: 'center', padding: 16, background: '#f7f9fc', borderRadius: 10 }}>
-                <p style={{ fontSize: 24, fontWeight: 600, color: '#633806', margin: 0 }}>{formatCurrency(totalEarnings)}</p>
-                <p style={{ fontSize: 12, color: '#718096', marginTop: 4 }}>Total Earnings</p>
+              <div style={{ textAlign: 'center', padding: 16, background: 'var(--bg-secondary)', borderRadius: 10 }}>
+                <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--warning-text)', margin: 0 }}>{formatCurrency(totalEarnings)}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Total Earnings</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Sessions Tab */}
       {activeTab === 'sessions' && (
-        <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
           {sessions.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#718096' }}>No sessions found</div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No sessions found</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background: '#f7f9fc', borderBottom: '1px solid #e2e8f0' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Date</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Client/Professional</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Amount</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Status</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Payment</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Payout</th>
+                  <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', color: 'var(--text-secondary)' }}>Date</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', color: 'var(--text-secondary)' }}>Client/Professional</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Amount</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Status</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Payment</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Payout</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -359,19 +342,19 @@ export default function UserProfile() {
                     const statusStyle = getStatusColor(session.status);
                     const payoutStyle = getPayoutStatusColor(session.payoutStatus);
                     return (
-                      <tr key={session.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '12px 16px' }}>{formatDate(session.sessionDate)}</td>
-                        <td style={{ padding: '12px 16px' }}>
+                      <tr key={session.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-primary)' }}>{formatDate(session.sessionDate)}</td>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-primary)' }}>
                           {user.role === 'Professional' ? session.clientName : session.professionalName}
                         </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>{formatCurrency(session.amount)}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-primary)' }}>{formatCurrency(session.amount)}</td>
                         <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                           <span style={{ background: statusStyle.bg, color: statusStyle.color, padding: '4px 12px', borderRadius: 20, fontSize: 11 }}>
                             {session.status}
                           </span>
                         </td>
                         <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          <span style={{ color: session.paymentStatus === 'Paid' ? '#085041' : '#633806' }}>
+                          <span style={{ color: session.paymentStatus === 'Paid' ? 'var(--success-text)' : 'var(--warning-text)' }}>
                             {session.paymentStatus}
                           </span>
                         </td>
@@ -390,35 +373,34 @@ export default function UserProfile() {
         </div>
       )}
 
-      {/* Ratings Tab (Professional only) */}
       {activeTab === 'ratings' && isProfessional && (
-        <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
           {ratings.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#718096' }}>No ratings yet</div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No ratings yet</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background: '#f7f9fc', borderBottom: '1px solid #e2e8f0' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Client</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Rating</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Review</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Date</th>
+                  <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', color: 'var(--text-secondary)' }}>Client</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Rating</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', color: 'var(--text-secondary)' }}>Review</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', color: 'var(--text-secondary)' }}>Date</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ratings.map(rating => (
-                    <tr key={rating.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px 16px' }}>{rating.clientName}</td>
+                    <tr key={rating.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '12px 16px', color: 'var(--text-primary)' }}>{rating.clientName}</td>
                       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: 2 }}>
+                        <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
                           {[1, 2, 3, 4, 5].map(star => (
-                            <span key={star} style={{ color: star <= rating.rating ? '#FFD700' : '#e2e8f0' }}>★</span>
+                            <span key={star} style={{ color: star <= rating.rating ? '#FFD700' : 'var(--border)' }}>★</span>
                           ))}
                         </div>
                       </td>
-                      <td style={{ padding: '12px 16px' }}>{rating.review || '—'}</td>
-                      <td style={{ padding: '12px 16px' }}>{formatDate(rating.createdAt)}</td>
+                      <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{rating.review || '—'}</td>
+                      <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{formatDate(rating.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -428,19 +410,18 @@ export default function UserProfile() {
         </div>
       )}
 
-      {/* Payouts Tab (Professional only) */}
       {activeTab === 'payouts' && isProfessional && (
-        <div style={{ background: 'white', borderRadius: 12, padding: 24, border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24, marginBottom: 24 }}>
-            <div style={{ padding: 16, background: '#E1F5EE', borderRadius: 10 }}>
-              <p style={{ fontSize: 12, color: '#085041', marginBottom: 4 }}>Pending Payout</p>
-              <p style={{ fontSize: 28, fontWeight: 600, color: '#085041', margin: 0 }}>
+        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 24, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 24, marginBottom: 24 }}>
+            <div style={{ padding: 16, background: 'var(--success-bg)', borderRadius: 10 }}>
+              <p style={{ fontSize: 12, color: 'var(--success-text)', marginBottom: 4 }}>Pending Payout</p>
+              <p style={{ fontSize: 28, fontWeight: 600, color: 'var(--success-text)', margin: 0 }}>
                 {formatCurrency(user.professionalProfile?.pendingPayout || 0)}
               </p>
             </div>
-            <div style={{ padding: 16, background: '#EEEDFE', borderRadius: 10 }}>
-              <p style={{ fontSize: 12, color: '#3C3489', marginBottom: 4 }}>Total Paid Out</p>
-              <p style={{ fontSize: 28, fontWeight: 600, color: '#3C3489', margin: 0 }}>
+            <div style={{ padding: 16, background: 'var(--info-bg)', borderRadius: 10 }}>
+              <p style={{ fontSize: 12, color: 'var(--info-text)', marginBottom: 4 }}>Total Paid Out</p>
+              <p style={{ fontSize: 28, fontWeight: 600, color: 'var(--info-text)', margin: 0 }}>
                 {formatCurrency(user.professionalProfile?.paidOut || 0)}
               </p>
             </div>
@@ -448,8 +429,8 @@ export default function UserProfile() {
           
           {pendingPayoutSessions.length > 0 && (
             <>
-              <div style={{ marginBottom: 16, padding: 12, background: '#FAEEDA', borderRadius: 8 }}>
-                <p style={{ fontSize: 13, color: '#633806', margin: 0 }}>
+              <div style={{ marginBottom: 16, padding: 12, background: 'var(--warning-bg)', borderRadius: 8 }}>
+                <p style={{ fontSize: 13, color: 'var(--warning-text)', margin: 0 }}>
                   📋 {pendingPayoutSessions.length} session(s) ready for payout totaling {formatCurrency(pendingPayoutSessions.reduce((sum, s) => sum + (s.professionalEarnings || 0), 0))}
                 </p>
               </div>
@@ -458,7 +439,7 @@ export default function UserProfile() {
                 style={{
                   width: '100%',
                   padding: '12px',
-                  background: '#6c63ff',
+                  background: 'var(--accent)',
                   color: 'white',
                   border: 'none',
                   borderRadius: 8,
@@ -473,7 +454,7 @@ export default function UserProfile() {
           )}
           
           {pendingPayoutSessions.length === 0 && (
-            <div style={{ padding: 40, textAlign: 'center', color: '#718096' }}>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               No pending payouts. All earnings have been paid out.
             </div>
           )}

@@ -59,6 +59,51 @@ namespace kaizenbackend.Controllers
             });
         }
 
+        // GET: api/professional/public-profile/{id}
+        [HttpGet("public-profile/{id}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetPublicProfile(int id)
+        {
+            try
+            {
+                var user = await _context.Users
+                    .Include(u => u.ProfessionalProfile)
+                    .ThenInclude(p => p.ProfessionalLinks)
+                    .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
+
+                if (user == null)
+                    return NotFound(new { message = "Professional not found." });
+
+                return Ok(new
+                {
+                    user.Id,
+                    user.FirstName,
+                    user.LastName,
+                    user.Email,
+                    ProfessionalProfile = user.ProfessionalProfile != null ? new
+                    {
+                        user.ProfessionalProfile.Bio,
+                        user.ProfessionalProfile.Specialization,
+                        user.ProfessionalProfile.YearsOfExperience,
+                        user.ProfessionalProfile.Education,
+                        user.ProfessionalProfile.Certifications,
+                        user.ProfessionalProfile.LicenseNumber,
+                        user.ProfessionalProfile.AverageRating,
+                        ProfessionalLinks = user.ProfessionalProfile.ProfessionalLinks != null ? new
+                        {
+                            user.ProfessionalProfile.ProfessionalLinks.Linkedin,
+                            user.ProfessionalProfile.ProfessionalLinks.Website,
+                            user.ProfessionalProfile.ProfessionalLinks.Portfolio
+                        } : null
+                    } : null
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error retrieving professional profile.", error = ex.Message });
+            }
+        }
+
         // PUT: api/professional/payment-setup
         [HttpPut("payment-setup")]
         public async Task<IActionResult> UpdatePaymentSetup([FromBody] PaymentSetupDto dto)
@@ -248,6 +293,7 @@ namespace kaizenbackend.Controllers
         }
     }
 }
+
 public class UpdateProfessionalProfileDto
 {
     public string? FirstName { get; set; }

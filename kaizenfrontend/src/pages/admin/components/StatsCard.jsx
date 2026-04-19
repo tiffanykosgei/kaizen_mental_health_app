@@ -1,11 +1,11 @@
 export default function StatsCard({ title, value, color, icon }) {
   const getColorStyles = () => {
     switch(color) {
-      case 'purple': return { bg: '#EEEDFE', text: '#6c63ff' };
-      case 'green': return { bg: '#E1F5EE', text: '#085041' };
-      case 'orange': return { bg: '#FAEEDA', text: '#633806' };
-      case 'red': return { bg: '#FCEBEB', text: '#791F1F' };
-      default: return { bg: '#F1EFE8', text: '#444441' };
+      case 'purple': return { bg: 'var(--info-bg)', text: 'var(--accent)' };
+      case 'green': return { bg: 'var(--success-bg)', text: 'var(--success-text)' };
+      case 'orange': return { bg: 'var(--warning-bg)', text: 'var(--warning-text)' };
+      case 'red': return { bg: 'var(--error-bg)', text: 'var(--error-text)' };
+      default: return { bg: 'var(--bg-hover)', text: 'var(--text-secondary)' };
     }
   };
 
@@ -13,17 +13,18 @@ export default function StatsCard({ title, value, color, icon }) {
 
   return (
     <div style={{
-      background: 'white',
+      background: 'var(--bg-card)',
       borderRadius: 12,
       padding: 20,
-      border: '1px solid #e2e8f0',
+      border: '1px solid var(--border)',
       display: 'flex',
       justifyContent: 'space-between',
-      alignItems: 'center'
+      alignItems: 'center',
+      transition: 'all 0.2s ease'
     }}>
       <div>
-        <p style={{ fontSize: 13, color: '#718096', marginBottom: 8 }}>{title}</p>
-        <p style={{ fontSize: 28, fontWeight: 600, color: '#1a202c', margin: 0 }}>{value}</p>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>{title}</p>
+        <p style={{ fontSize: 28, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{value}</p>
       </div>
       <div style={{
         width: 48,

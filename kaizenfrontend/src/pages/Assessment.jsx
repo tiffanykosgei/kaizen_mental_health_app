@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 
@@ -29,16 +29,16 @@ const scaleLabels = {
 };
 
 const categoryColors = {
-  Anxiety:    { bg: '#EEEDFE', text: '#3C3489', bar: '#7F77DD' },
-  Depression: { bg: '#E1F5EE', text: '#085041', bar: '#1D9E75' },
-  Loneliness: { bg: '#FAECE7', text: '#712B13', bar: '#D85A30' },
+  Anxiety:    { bg: 'var(--info-bg)', text: 'var(--info-text)', bar: '#7F77DD', icon: '😰' },
+  Depression: { bg: 'var(--success-bg)', text: 'var(--success-text)', bar: '#1D9E75', icon: '😔' },
+  Loneliness: { bg: 'var(--warning-bg)', text: 'var(--warning-text)', bar: '#D85A30', icon: '🫂' },
 };
 
 const levelColors = {
-  Good:     { bg: '#EAF3DE', text: '#27500A' },
-  Mild:     { bg: '#FAEEDA', text: '#633806' },
-  Moderate: { bg: '#FAECE7', text: '#712B13' },
-  Severe:   { bg: '#FCEBEB', text: '#791F1F' },
+  Good:     { bg: 'var(--success-bg)', text: 'var(--success-text)', icon: '😊' },
+  Mild:     { bg: 'var(--warning-bg)', text: 'var(--warning-text)', icon: '😐' },
+  Moderate: { bg: 'var(--warning-bg)', text: 'var(--warning-text)', icon: '😟' },
+  Severe:   { bg: 'var(--error-bg)', text: 'var(--error-text)', icon: '😰' },
 };
 
 export default function Assessment() {
@@ -49,10 +49,36 @@ export default function Assessment() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [assessmentHistory, setAssessmentHistory] = useState([]);
+  const [hasAssessments, setHasAssessments] = useState(false);
+
+  useEffect(() => {
+    fetchAssessmentHistory();
+  }, []);
+
+  const fetchAssessmentHistory = async () => {
+    try {
+      const response = await API.get('/selfassessment/history');
+      console.log('Assessment history response:', response.data);
+      
+      // Check if we have assessments (array with length > 0)
+      const hasHistory = response.data && Array.isArray(response.data) && response.data.length > 0;
+      setHasAssessments(hasHistory);
+      setAssessmentHistory(response.data || []);
+      
+      console.log('Has assessments:', hasHistory);
+      console.log('Number of assessments:', response.data?.length || 0);
+    } catch (err) {
+      console.error('Failed to fetch assessment history:', err);
+      setHasAssessments(false);
+      setAssessmentHistory([]);
+    }
+  };
 
   const handleAnswer = (value) => {
     const qId = questions[currentQ].id;
     setAnswers(prev => ({ ...prev, [qId]: value }));
+    setError('');
   };
 
   const handleNext = () => {
@@ -80,7 +106,6 @@ export default function Assessment() {
       questions.forEach(q => { payload[q.id] = answers[q.id]; });
       const response = await API.post('/selfassessment/submit', payload);
       
-      // Fetch recommended resources based on the assessment
       const resourcesResponse = await API.get('/resource/recommended');
       
       setResult({
@@ -88,6 +113,9 @@ export default function Assessment() {
         recommendedResources: resourcesResponse.data.resources || []
       });
       setStep('results');
+      
+      // Refresh history after new assessment
+      await fetchAssessmentHistory();
     } catch (err) {
       console.error('Error submitting assessment:', err);  
       setError('Something went wrong. Please try again.');
@@ -97,61 +125,516 @@ export default function Assessment() {
     }
   };
 
+  const handleViewHistory = () => {
+    if (hasAssessments && assessmentHistory.length > 0) {
+      navigate('/assessment-history');
+    } else {
+      // Show a more helpful message
+      alert('No assessment history found. Please complete at least one assessment first to view your history.');
+    }
+  };
+
   const progress = Math.round(((currentQ + 1) / questions.length) * 100);
   const currentCategory = questions[currentQ]?.category;
-  const catColor = categoryColors[currentCategory] || {};
+  //const catColor = categoryColors[currentCategory] || {};
 
+  const getTrendIcon = (current, previous) => {
+    if (!previous) return '🆕';
+    if (current < previous) return '📉';
+    if (current > previous) return '📈';
+    return '➡️';
+  };
+
+  const getTrendColor = (current, previous) => {
+    if (!previous) return 'var(--text-muted)';
+    if (current < previous) return 'var(--success-text)';
+    if (current > previous) return 'var(--error-text)';
+    return 'var(--text-muted)';
+  };
+
+  // Consent Screen
   if (step === 'consent') return (
-    <div className="auth-container">
-      <div className="auth-card" style={{ maxWidth: 500 }}>
-        <h2>Before you begin</h2>
-        <p style={{ marginBottom: 16 }}>Please read this carefully</p>
-        <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 8, padding: '14px 16px', marginBottom: 20, fontSize: 13, lineHeight: 1.7, color: '#633806' }}>
-          <strong>Important notice:</strong> This self-assessment is a <strong>screening tool only</strong> and does <strong>not</strong> constitute a medical diagnosis. Results are intended to help you understand your wellbeing and find relevant resources. Please consult a qualified mental health professional for clinical advice.
+    <div style={{ maxWidth: 800, margin: '0 auto', padding: '32px 24px' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+              Mental Health Assessment
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 6, marginBottom: 0 }}>
+              Take a moment to check in with yourself
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {/* View History Button - Always Visible */}
+            <button
+              onClick={handleViewHistory}
+              style={{
+                background: 'transparent',
+                color: 'var(--accent)',
+                border: '1.5px solid var(--accent)',
+                padding: '10px 20px',
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+                borderRadius: 10,
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--accent)';
+                e.currentTarget.style.color = 'white';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'var(--accent)';
+              }}
+            >
+              📊 View History
+              {hasAssessments && assessmentHistory.length > 0 && (
+                <span style={{
+                  background: 'var(--accent)',
+                  color: 'white',
+                  borderRadius: 12,
+                  padding: '2px 8px',
+                  fontSize: 11,
+                  marginLeft: 4
+                }}>
+                  {assessmentHistory.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => navigate('/dashboard')}
+              style={{
+                background: 'transparent',
+                color: 'var(--text-muted)',
+                border: '1.5px solid var(--border)',
+                padding: '10px 20px',
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+                borderRadius: 10,
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-hover)';
+                e.currentTarget.style.borderColor = 'var(--accent)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >
+              ← Back
+            </button>
+          </div>
         </div>
-        <div style={{ fontSize: 13, color: '#4a5568', lineHeight: 1.7, marginBottom: 24 }}>
-          <p>You will be asked <strong>15 questions</strong> across three areas: Anxiety, Depression and Loneliness. Each question is answered on a scale of 1 (Never) to 5 (Always).</p>
-          <br />
-          <p>Your responses are stored securely and are only visible to you and your assigned mental health professional. You can retake this assessment at any time to track your progress.</p>
+        <div style={{ height: 3, width: 60, background: 'var(--gradient-primary)', marginTop: 16, borderRadius: 3 }} />
+      </div>
+
+      {/* Main Card */}
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: 20,
+        border: '1px solid var(--border)',
+        padding: 32,
+        boxShadow: 'var(--shadow-sm)'
+      }}>
+        {/* Welcome Section */}
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{ fontSize: 56, marginBottom: 12 }}>🧠</div>
+          <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+            Welcome to Your Wellness Check-in
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', marginTop: 8, fontSize: 14 }}>
+            Understanding your mental wellbeing is the first step toward healing
+          </p>
         </div>
-        <button onClick={() => setStep('questions')}>I understand — begin assessment</button>
-        <div className="switch-link" style={{ marginTop: 16 }}>
-          <a href="#" onClick={() => navigate('/dashboard')}>Return to dashboard</a>
+
+        {/* Important Notice */}
+        <div style={{
+          background: 'var(--warning-bg)',
+          borderRadius: 12,
+          padding: '16px 20px',
+          marginBottom: 28,
+          borderLeft: `4px solid var(--warning-text)`
+        }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 18 }}>⚠️</span>
+            <p style={{ fontSize: 13, color: 'var(--warning-text)', margin: 0, lineHeight: 1.6 }}>
+              <strong>Important notice:</strong> This self-assessment is a <strong>screening tool only</strong> and does <strong>not</strong> constitute a medical diagnosis. Results are intended to help you understand your wellbeing and find relevant resources. Please consult a qualified mental health professional for clinical advice.
+            </p>
+          </div>
         </div>
+
+        {/* What to Expect Section */}
+        <div style={{ marginBottom: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)' }}>
+            What to expect:
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 16px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 10,
+              border: '1px solid var(--border)'
+            }}>
+              <span style={{ fontSize: 24 }}>📝</span>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>15 Questions</p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Across 3 wellness areas</p>
+              </div>
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 16px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 10,
+              border: '1px solid var(--border)'
+            }}>
+              <span style={{ fontSize: 24 }}>⭐</span>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>Scale 1-5</p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>From Never to Always</p>
+              </div>
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 16px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 10,
+              border: '1px solid var(--border)'
+            }}>
+              <span style={{ fontSize: 24 }}>🔒</span>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>Secure & Private</p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Only visible to you and your professional</p>
+              </div>
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 16px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 10,
+              border: '1px solid var(--border)'
+            }}>
+              <span style={{ fontSize: 24 }}>📊</span>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>Track Progress</p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Retake anytime to see improvement</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Button */}
+        <button 
+          onClick={() => setStep('questions')} 
+          style={{
+            width: '100%',
+            padding: '14px',
+            background: 'var(--accent)',
+            color: 'white',
+            border: 'none',
+            borderRadius: 10,
+            fontSize: 15,
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = '#5a52d5'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'var(--accent)'}
+        >
+          Begin Assessment →
+        </button>
       </div>
     </div>
   );
 
+  // Loading Screen
   if (step === 'loading') return (
-    <div className="auth-container">
-      <div className="auth-card" style={{ textAlign: 'center' }}>
-        <h2>Analysing your responses...</h2>
-        <p>Please wait while we calculate your results.</p>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 50, height: 50, border: '3px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+        <p style={{ color: 'var(--text-secondary)' }}>Analysing your responses...</p>
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
   );
 
-  if (step === 'results' && result) return (
-    <div className="auth-container" style={{ alignItems: 'flex-start', padding: '40px 20px' }}>
-      <div className="auth-card" style={{ maxWidth: 560 }}>
-        <h2>Your Assessment Results</h2>
-        <p style={{ marginBottom: 20 }}>Completed on {new Date().toLocaleDateString('en-KE', { dateStyle: 'long' })}</p>
+  // Questions Screen
+  if (step === 'questions') return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '32px 24px' }}>
+      {/* Progress Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+              Question {currentQ + 1} of {questions.length}
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+              {currentCategory}
+            </p>
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)' }}>{progress}%</span>
+        </div>
+        <div style={{ height: 6, background: 'var(--bg-secondary)', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: progress + '%', background: 'var(--gradient-primary)', borderRadius: 3, transition: 'width 0.3s ease' }} />
+        </div>
+      </div>
 
-        {result.crisisSupport && (
-          <div style={{ background: '#FCEBEB', border: '1px solid #F09595', borderRadius: 8, padding: '14px 16px', marginBottom: 20, fontSize: 13, color: '#791F1F', lineHeight: 1.7 }}>
-            <strong>We are concerned about your wellbeing.</strong> Your results suggest you may be experiencing significant distress. Please reach out for support immediately.<br /><br />
-            <strong>Befrienders Kenya (free, 24 hours):</strong> 0800 723 253
+      {/* Question Card */}
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: 16,
+        border: '1px solid var(--border)',
+        padding: 28,
+        boxShadow: 'var(--shadow-sm)',
+        marginBottom: 20
+      }}>
+        <p style={{ fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 28 }}>
+          {questions[currentQ].text}
+        </p>
+
+        {/* Answer Options */}
+        <div style={{ marginBottom: 24 }}>
+          {[1, 2, 3, 4, 5].map(val => {
+            const isSelected = answers[questions[currentQ].id] === val;
+            return (
+              <button
+                key={val}
+                onClick={() => handleAnswer(val)}
+                style={{
+                  width: '100%',
+                  marginBottom: 10,
+                  background: isSelected ? 'var(--accent)' : 'var(--bg-card)',
+                  color: isSelected ? 'white' : 'var(--text-primary)',
+                  border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '14px 18px',
+                  textAlign: 'left',
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.background = 'var(--bg-hover)';
+                    e.currentTarget.style.borderColor = 'var(--accent)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.background = 'var(--bg-card)';
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                  }
+                }}
+              >
+                <span style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--bg-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  flexShrink: 0
+                }}>
+                  {val}
+                </span>
+                <span style={{ flex: 1 }}>{scaleLabels[val]}</span>
+                {isSelected && <span style={{ fontSize: 16 }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {error && (
+          <div style={{ background: 'var(--error-bg)', color: 'var(--error-text)', padding: '12px 16px', borderRadius: 10, marginBottom: 20, fontSize: 13 }}>
+            {error}
           </div>
         )}
 
-        <div style={{ background: '#f7f9fc', borderRadius: 10, padding: '16px', marginBottom: 20, textAlign: 'center' }}>
-          <p style={{ fontSize: 12, color: '#718096', marginBottom: 6 }}>Overall wellbeing score</p>
-          <p style={{ fontSize: 36, fontWeight: 600, color: '#1a202c', margin: 0 }}>{result.overallScore}<span style={{ fontSize: 16, color: '#718096' }}>/5</span></p>
-          <span style={{ display: 'inline-block', marginTop: 8, padding: '4px 16px', borderRadius: 20, fontSize: 13, fontWeight: 500, background: levelColors[result.overallLevel]?.bg, color: levelColors[result.overallLevel]?.text }}>
-            {result.overallLevel}
+        {/* Navigation Buttons */}
+        <div style={{ display: 'flex', gap: 12 }}>
+          {currentQ > 0 && (
+            <button 
+              onClick={handleBack} 
+              style={{
+                flex: 1,
+                padding: '12px',
+                background: 'transparent',
+                color: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                borderRadius: 10,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--accent)';
+                e.currentTarget.style.color = 'white';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'var(--accent)';
+              }}
+            >
+              ← Back
+            </button>
+          )}
+          <button 
+            onClick={handleNext} 
+            disabled={loading}
+            style={{
+              flex: 2,
+              padding: '12px',
+              background: 'var(--accent)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.6 : 1,
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              if (!loading) e.currentTarget.style.background = '#5a52d5';
+            }}
+            onMouseLeave={(e) => {
+              if (!loading) e.currentTarget.style.background = 'var(--accent)';
+            }}
+          >
+            {currentQ === questions.length - 1 ? 'Submit Assessment' : 'Next Question →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Results Screen
+  if (step === 'results' && result) return (
+    <div style={{ maxWidth: 800, margin: '0 auto', padding: '32px 24px' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+              Your Results
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 6, marginBottom: 0 }}>
+              Completed on {new Date().toLocaleDateString('en-KE', { dateStyle: 'long' })}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button 
+              onClick={handleViewHistory}
+              style={{
+                background: 'transparent',
+                color: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+                borderRadius: 8,
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--accent)';
+                e.currentTarget.style.color = 'white';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'var(--accent)';
+              }}
+            >
+              📊 View Full History
+              {hasAssessments && assessmentHistory.length > 0 && (
+                <span style={{ marginLeft: 6 }}>({assessmentHistory.length})</span>
+              )}
+            </button>
+          </div>
+        </div>
+        <div style={{ height: 3, width: 60, background: 'var(--gradient-primary)', marginTop: 16, borderRadius: 3 }} />
+      </div>
+
+      {/* Results Card - Keep existing results display */}
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: 20,
+        border: '1px solid var(--border)',
+        padding: 32,
+        boxShadow: 'var(--shadow-sm)'
+      }}>
+        {/* Crisis Alert */}
+        {result.crisisSupport && (
+          <div style={{
+            background: 'var(--error-bg)',
+            borderRadius: 12,
+            padding: '20px',
+            marginBottom: 28,
+            textAlign: 'center',
+            border: '1px solid var(--error-text)'
+          }}>
+            <span style={{ fontSize: 40, display: 'block', marginBottom: 12 }}>⚠️</span>
+            <h3 style={{ fontSize: 18, fontWeight: 600, color: 'var(--error-text)', marginBottom: 12 }}>
+              We're Here for You
+            </h3>
+            <p style={{ fontSize: 14, color: 'var(--error-text)', marginBottom: 16, lineHeight: 1.6 }}>
+              Your results suggest you may be experiencing significant distress. <strong>You don't have to go through this alone.</strong>
+            </p>
+            <div style={{ background: 'white', borderRadius: 10, padding: '16px' }}>
+              <p style={{ fontSize: 13, marginBottom: 8 }}>📞 <strong>24/7 Crisis Support Hotline</strong></p>
+              <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--error-text)', margin: 0 }}>0800 723 253</p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>Befrienders Kenya - Free, confidential support</p>
+            </div>
+          </div>
+        )}
+
+        {/* Score Overview */}
+        <div style={{ textAlign: 'center', marginBottom: 28, padding: '20px', background: 'var(--bg-secondary)', borderRadius: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>Overall Wellbeing Score</p>
+          <div style={{ fontSize: 52, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+            {result.overallScore}<span style={{ fontSize: 20, color: 'var(--text-muted)' }}>/5</span>
+          </div>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 20px',
+            borderRadius: 30,
+            fontSize: 14,
+            fontWeight: 600,
+            background: levelColors[result.overallLevel]?.bg,
+            color: levelColors[result.overallLevel]?.text
+          }}>
+            {levelColors[result.overallLevel]?.icon} {result.overallLevel}
           </span>
         </div>
 
+        {/* Category Breakdown */}
+        <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)' }}>Category Breakdown</h3>
         {['Anxiety', 'Depression', 'Loneliness'].map(cat => {
           const scoreKey = cat.toLowerCase() + 'Score';
           const levelKey = cat.toLowerCase() + 'Level';
@@ -159,13 +642,25 @@ export default function Assessment() {
           const level = result[levelKey];
           const color = categoryColors[cat];
           const barWidth = Math.round((score / 5) * 100);
+          
+          const previousAssessment = assessmentHistory[1];
+          const previousScore = previousAssessment?.[scoreKey];
+          const trendIcon = getTrendIcon(score, previousScore);
+          const trendColor = getTrendColor(score, previousScore);
+          
           return (
-            <div key={cat} style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 10, background: color.bg }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: color.text }}>{cat}</span>
+            <div key={cat} style={{ marginBottom: 16, padding: '16px', borderRadius: 12, background: color.bg }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: color.text }}>{score}/5</span>
-                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: levelColors[level]?.bg, color: levelColors[level]?.text, fontWeight: 500 }}>{level}</span>
+                  <span style={{ fontSize: 20 }}>{color.icon}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: color.text }}>{cat}</span>
+                  {previousScore && (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: trendColor }}>{trendIcon} {previousScore}/5</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: color.text }}>{score}/5</span>
+                  <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, background: levelColors[level]?.bg, color: levelColors[level]?.text }}>{level}</span>
                 </div>
               </div>
               <div style={{ height: 8, background: 'rgba(0,0,0,0.1)', borderRadius: 4, overflow: 'hidden' }}>
@@ -175,161 +670,62 @@ export default function Assessment() {
           );
         })}
 
-        <div style={{ background: '#f7f9fc', borderRadius: 10, padding: '14px 16px', marginBottom: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 500, color: '#1a202c', marginBottom: 6 }}>Primary area of concern</p>
-          <p style={{ fontSize: 13, color: '#4a5568', lineHeight: 1.6 }}>{result.resultSummary}</p>
+        {/* Primary Concern */}
+        <div style={{ background: 'var(--bg-secondary)', borderRadius: 12, padding: '16px', marginBottom: 24 }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>🎯 Primary Area of Concern</p>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>{result.resultSummary}</p>
         </div>
 
-        {/* Recommended Resources Section with Podcast Support */}
-        {result.recommendedResources && result.recommendedResources.length > 0 && (
-          <div style={{ marginTop: 20, marginBottom: 20 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 500, marginBottom: 12 }}>Recommended Resources</h3>
-            <p style={{ fontSize: 13, color: '#4a5568', marginBottom: 16 }}>
-              Based on your primary concern: <strong>{result.primaryConcern}</strong>
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {result.recommendedResources.slice(0, 3).map(resource => {
-                const isPodcast = resource.type === 'Podcast';
-                const isAudio = resource.type === 'Audio';
-                return (
-                  <div key={resource.id} style={{
-                    background: '#f7f9fc',
-                    borderRadius: 10,
-                    padding: '14px 16px',
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500, color: '#1a202c' }}>{resource.title}</span>
-                      <span style={{
-                        fontSize: 11,
-                        padding: '2px 8px',
-                        borderRadius: 4,
-                        background: isPodcast ? '#F3E5F5' : '#E1F5EE',
-                        color: isPodcast ? '#4A1D6D' : '#085041'
-                      }}>{resource.type}</span>
-                    </div>
-                    {resource.description && (
-                      <p style={{ fontSize: 12, color: '#718096', marginBottom: 10 }}>{resource.description}</p>
-                    )}
-                    
-                    {isPodcast ? (
-                      <div style={{ marginTop: 8 }}>
-                        <audio controls style={{ width: '100%' }}>
-                          <source src={resource.url} type="audio/mpeg" />
-                          Your browser does not support the audio element.
-                        </audio>
-                        <p style={{ fontSize: 10, color: '#a0aec0', marginTop: 6 }}>
-                          🎙️ Podcast episode — press play to listen
-                        </p>
-                      </div>
-                    ) : isAudio ? (
-                      <div style={{ marginTop: 8 }}>
-                        <audio controls style={{ width: '100%' }}>
-                          <source src={resource.url} type="audio/mpeg" />
-                          Your browser does not support the audio element.
-                        </audio>
-                      </div>
-                    ) : (
-                      <a href={resource.url} target="_blank" rel="noreferrer"
-                        style={{ fontSize: 12, color: '#6c63ff', textDecoration: 'none' }}>
-                        Open resource →
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {result.recommendedResources.length > 3 && (
-              <button
-                onClick={() => navigate('/resources')}
-                style={{
-                  marginTop: 12,
-                  width: 'auto',
-                  padding: '8px 16px',
-                  fontSize: 12,
-                  background: 'transparent',
-                  color: '#6c63ff',
-                  border: '1px solid #6c63ff'
-                }}
-              >
-                View all resources
-              </button>
-            )}
-          </div>
-        )}
-
-        <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 8, padding: '12px 14px', marginBottom: 20, fontSize: 12, color: '#633806', lineHeight: 1.6 }}>
-          <strong>Disclaimer:</strong> {result.disclaimer}
-        </div>
-
-        <button onClick={() => navigate('/dashboard')} style={{ marginBottom: 10 }}>
-          Go to dashboard
-        </button>
-        <button onClick={() => { setStep('consent'); setCurrentQ(0); setAnswers({}); setResult(null); }}
-          style={{ background: 'transparent', color: '#6c63ff', border: '1px solid #6c63ff' }}>
-          Retake assessment
-        </button>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="auth-container">
-      <div className="auth-card" style={{ maxWidth: 540 }}>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: '#718096' }}>Question {currentQ + 1} of {questions.length}</span>
-            <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 4, background: catColor.bg, color: catColor.text, fontWeight: 500 }}>{currentCategory}</span>
-          </div>
-          <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: progress + '%', background: '#6c63ff', borderRadius: 3, transition: 'width 0.3s ease' }} />
-          </div>
-        </div>
-
-        <p style={{ fontSize: 16, fontWeight: 500, color: '#1a202c', lineHeight: 1.6, marginBottom: 24, minHeight: 60 }}>
-          {questions[currentQ].text}
-        </p>
-
-        <div style={{ marginBottom: 24 }}>
-          {[1, 2, 3, 4, 5].map(val => (
-            <button
-              key={val}
-              onClick={() => handleAnswer(val)}
-              style={{
-                marginBottom: 10,
-                background: answers[questions[currentQ].id] === val ? '#6c63ff' : 'white',
-                color: answers[questions[currentQ].id] === val ? 'white' : '#1a202c',
-                border: answers[questions[currentQ].id] === val ? '1px solid #6c63ff' : '1px solid #e2e8f0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: '12px 16px',
-                textAlign: 'left',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontSize: 14,
-                transition: 'all 0.15s'
-              }}
-            >
-              <span style={{ width: 28, height: 28, borderRadius: '50%', background: answers[questions[currentQ].id] === val ? 'rgba(255,255,255,0.3)' : '#f0f4f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 13, flexShrink: 0 }}>{val}</span>
-              {scaleLabels[val]}
-            </button>
-          ))}
-        </div>
-
-        {error && <div className="error-msg">{error}</div>}
-
-        <div style={{ display: 'flex', gap: 10 }}>
-          {currentQ > 0 && (
-            <button onClick={handleBack} style={{ background: 'transparent', color: '#6c63ff', border: '1px solid #6c63ff', flex: 1 }}>
-              Back
-            </button>
-          )}
-          <button onClick={handleNext} style={{ flex: 2 }} disabled={loading}>
-            {currentQ === questions.length - 1 ? 'Submit assessment' : 'Next question'}
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button 
+            onClick={() => navigate('/dashboard')} 
+            style={{
+              flex: 1,
+              padding: '12px',
+              background: 'var(--accent)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#5a52d5'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--accent)'}
+          >
+            Go to Dashboard
+          </button>
+          <button 
+            onClick={() => { setStep('consent'); setCurrentQ(0); setAnswers({}); setResult(null); }} 
+            style={{
+              flex: 1,
+              padding: '12px',
+              background: 'transparent',
+              color: 'var(--accent)',
+              border: '1px solid var(--accent)',
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--accent)';
+              e.currentTarget.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = 'var(--accent)';
+            }}
+          >
+            Retake Assessment
           </button>
         </div>
       </div>
     </div>
   );
+
+  return null;
 }

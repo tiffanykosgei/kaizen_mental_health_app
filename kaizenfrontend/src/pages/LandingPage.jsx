@@ -8,7 +8,7 @@ const roles = [
     title: 'Client Portal',
     subtitle: 'Client Login Here',
     desc: 'Take assessments, book sessions and track your wellness journey.',
-    color: '#e91e8c',
+    color: 'var(--primary)',
     bg: 'rgba(233,30,140,0.06)'
   },
   {
@@ -17,7 +17,7 @@ const roles = [
     title: 'Professional Portal',
     subtitle: 'Professional Login Here',
     desc: 'Manage client sessions, upload resources and support clients.',
-    color: '#00c98d',
+    color: 'var(--secondary)',
     bg: 'rgba(0,201,141,0.06)'
   },
   {
@@ -26,18 +26,17 @@ const roles = [
     title: 'Admin Portal',
     subtitle: 'Administrator Login Here',
     desc: 'Oversee the platform, manage users and generate reports.',
-    color: '#7c63ff',
+    color: 'var(--accent)',
     bg: 'rgba(124,99,255,0.06)'
   }
 ];
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { dark, toggle } = useTheme();
+  const { dark, toggleTheme } = useTheme();
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Nav */}
+    <div style={{ minHeight: '100vh', background: 'var(--bg-body)' }}>
       <nav style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '18px 40px', background: 'var(--bg-card)',
@@ -48,7 +47,7 @@ export default function LandingPage() {
           <div>
             <h1 style={{
               fontSize: 20, fontWeight: 800, margin: 0,
-              background: 'linear-gradient(135deg, #e91e8c, #00c98d)',
+              background: 'var(--gradient-primary)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               backgroundClip: 'text'
             }}>
@@ -59,12 +58,11 @@ export default function LandingPage() {
             </p>
           </div>
         </div>
-        <button onClick={toggle} className={`theme-toggle ${dark ? 'dark' : ''}`} type="button">
+        <button onClick={toggleTheme} className={`theme-toggle ${dark ? 'dark' : ''}`} type="button">
           <div className="theme-toggle-thumb" />
         </button>
       </nav>
 
-      {/* Hero */}
       <div style={{ textAlign: 'center', padding: '56px 20px 40px' }}>
         <h2 style={{
           fontSize: 36, fontWeight: 800,
@@ -74,7 +72,7 @@ export default function LandingPage() {
         </h2>
         <div style={{
           width: 60, height: 4, borderRadius: 2,
-          background: 'linear-gradient(135deg, #e91e8c, #00c98d)',
+          background: 'var(--gradient-primary)',
           margin: '0 auto 20px'
         }} />
         <p style={{
@@ -85,7 +83,6 @@ export default function LandingPage() {
         </p>
       </div>
 
-      {/* Portal cards */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
@@ -169,7 +166,6 @@ export default function LandingPage() {
         ))}
       </div>
 
-      {/* Footer */}
       <div style={{
         textAlign: 'center', padding: '20px',
         borderTop: '1.5px solid var(--border)',

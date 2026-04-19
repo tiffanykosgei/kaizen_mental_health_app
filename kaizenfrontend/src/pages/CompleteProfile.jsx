@@ -5,7 +5,7 @@ import API from '../api/axios';
 
 export default function CompleteProfile() {
   const navigate = useNavigate();
-  const { dark, toggle } = useTheme();
+  const { dark, toggleTheme } = useTheme();
   
   const [formData, setFormData] = useState({
     email: '',
@@ -23,14 +23,12 @@ export default function CompleteProfile() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
-    // Get Google data from localStorage
     const email = localStorage.getItem('googleEmail');
     const firstName = localStorage.getItem('googleFirstName');
     const lastName = localStorage.getItem('googleLastName');
     const role = localStorage.getItem('googleRole');
     
     if (!email || !role) {
-      // No Google data, redirect to register
       navigate('/');
       return;
     }
@@ -48,10 +46,10 @@ export default function CompleteProfile() {
 
   const getRoleConfig = () => {
     switch(formData.role) {
-      case 'Client': return { icon: '🧠', color: '#e91e8c', label: 'Client' };
-      case 'Professional': return { icon: '👩‍⚕️', color: '#00c98d', label: 'Professional' };
-      case 'Admin': return { icon: '🛡️', color: '#7c63ff', label: 'Admin' };
-      default: return { icon: '👤', color: '#666', label: 'User' };
+      case 'Client': return { icon: '🧠', color: 'var(--primary)', label: 'Client' };
+      case 'Professional': return { icon: '👩‍⚕️', color: 'var(--secondary)', label: 'Professional' };
+      case 'Admin': return { icon: '🛡️', color: 'var(--accent)', label: 'Admin' };
+      default: return { icon: '👤', color: 'var(--text-secondary)', label: 'User' };
     }
   };
 
@@ -68,10 +66,10 @@ export default function CompleteProfile() {
   const pwdScore = Object.values(pwdChecks).filter(Boolean).length;
   const pwdStrength = [
     null,
-    { text: 'Weak', color: '#e53e3e', width: '25%' },
-    { text: 'Fair', color: '#ed8936', width: '50%' },
-    { text: 'Good', color: '#ecc94b', width: '75%' },
-    { text: 'Strong', color: '#48bb78', width: '100%' }
+    { text: 'Weak', color: 'var(--error-text)', width: '25%' },
+    { text: 'Fair', color: 'var(--warning-text)', width: '50%' },
+    { text: 'Good', color: 'var(--warning-text)', width: '75%' },
+    { text: 'Strong', color: 'var(--success-text)', width: '100%' }
   ][pwdScore];
 
   const handleChange = (e) => {
@@ -83,7 +81,6 @@ export default function CompleteProfile() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validate form
     const eObj = {};
     if (!formData.firstName.trim()) eObj.firstName = 'First name is required';
     if (!formData.lastName.trim()) eObj.lastName = 'Last name is required';
@@ -117,13 +114,11 @@ export default function CompleteProfile() {
       const response = await API.post('/auth/complete-registration', payload);
       const data = response.data;
       
-      // Clear Google temp data
       localStorage.removeItem('googleEmail');
       localStorage.removeItem('googleFirstName');
       localStorage.removeItem('googleLastName');
       localStorage.removeItem('googleRole');
       
-      // Store token and user data
       localStorage.setItem('token', data.token);
       localStorage.setItem('role', data.role);
       localStorage.setItem('fullName', data.fullName);
@@ -140,7 +135,7 @@ export default function CompleteProfile() {
 
   const inputStyle = (hasError) => ({
     width: '100%', padding: '13px 16px',
-    border: `1.5px solid ${hasError ? '#e53e3e' : 'var(--border)'}`,
+    border: `1.5px solid ${hasError ? 'var(--error-text)' : 'var(--border)'}`,
     borderRadius: 10, fontSize: 14,
     background: 'var(--bg-card)', color: 'var(--text-primary)',
     outline: 'none', fontFamily: 'inherit'
@@ -152,14 +147,14 @@ export default function CompleteProfile() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
       <div style={{ position: 'absolute', top: 20, right: 24 }}>
-        <button onClick={toggle} className={`theme-toggle ${dark ? 'dark' : ''}`} type="button">
+        <button onClick={toggleTheme} className={`theme-toggle ${dark ? 'dark' : ''}`} type="button">
           <div className="theme-toggle-thumb" />
         </button>
       </div>
 
-      <div style={{ width: '100%', maxWidth: 550, background: 'var(--bg-card)', borderRadius: 20, border: '1.5px solid var(--border)', padding: '40px 36px', boxShadow: 'var(--shadow)' }}>
+      <div style={{ width: '100%', maxWidth: 550, background: 'var(--bg-card)', borderRadius: 20, border: '1.5px solid var(--border)', padding: '40px 36px', boxShadow: 'var(--shadow-md)' }}>
         
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{ fontSize: 48, marginBottom: 10 }}>{config.icon}</div>
@@ -173,18 +168,18 @@ export default function CompleteProfile() {
 
         <form onSubmit={handleSubmit}>
           {errors.submit && (
-            <div style={{ background: '#FCEBEB', color: '#791F1F', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+            <div style={{ background: 'var(--error-bg)', color: 'var(--error-text)', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
               {errors.submit}
             </div>
           )}
 
           <div style={{ 
-            background: '#E3F2FD', 
+            background: 'var(--info-bg)', 
             padding: '10px 14px', 
             borderRadius: 8, 
             marginBottom: 20,
             fontSize: 13,
-            color: '#1565C0'
+            color: 'var(--info-text)'
           }}>
             ✓ Google Verified Email: <strong>{formData.email}</strong>
           </div>
@@ -199,7 +194,7 @@ export default function CompleteProfile() {
                 onChange={handleChange} 
                 style={inputStyle(errors.firstName)} 
               />
-              {errors.firstName && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.firstName}</p>}
+              {errors.firstName && <p style={{ color: 'var(--error-text)', fontSize: 12, marginTop: 4 }}>{errors.firstName}</p>}
             </div>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Last Name *</label>
@@ -210,7 +205,7 @@ export default function CompleteProfile() {
                 onChange={handleChange} 
                 style={inputStyle(errors.lastName)} 
               />
-              {errors.lastName && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.lastName}</p>}
+              {errors.lastName && <p style={{ color: 'var(--error-text)', fontSize: 12, marginTop: 4 }}>{errors.lastName}</p>}
             </div>
           </div>
 
@@ -248,7 +243,7 @@ export default function CompleteProfile() {
                 {showPassword ? '👁️' : '👁️‍🗨️'}
               </button>
             </div>
-            {errors.password && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.password}</p>}
+            {errors.password && <p style={{ color: 'var(--error-text)', fontSize: 12, marginTop: 4 }}>{errors.password}</p>}
           </div>
 
           {formData.password && (
@@ -265,7 +260,7 @@ export default function CompleteProfile() {
                     { key: 'lowercase', label: 'a-z' }, 
                     { key: 'special', label: '!@#' }
                   ].map(r => (
-                    <span key={r.key} style={{ fontSize: 11, color: pwdChecks[r.key] ? '#48bb78' : 'var(--text-muted)' }}>
+                    <span key={r.key} style={{ fontSize: 11, color: pwdChecks[r.key] ? 'var(--success-text)' : 'var(--text-muted)' }}>
                       {pwdChecks[r.key] ? '✓' : '○'} {r.label}
                     </span>
                   ))}
@@ -298,11 +293,11 @@ export default function CompleteProfile() {
               </button>
             </div>
             {formData.confirmPassword && formData.password && (
-              <p style={{ fontSize: 12, marginTop: 4, color: formData.password === formData.confirmPassword ? '#48bb78' : '#e53e3e' }}>
+              <p style={{ fontSize: 12, marginTop: 4, color: formData.password === formData.confirmPassword ? 'var(--success-text)' : 'var(--error-text)' }}>
                 {formData.password === formData.confirmPassword ? '✓ Passwords match' : '✗ Passwords do not match'}
               </p>
             )}
-            {errors.confirmPassword && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.confirmPassword}</p>}
+            {errors.confirmPassword && <p style={{ color: 'var(--error-text)', fontSize: 12, marginTop: 4 }}>{errors.confirmPassword}</p>}
           </div>
 
           <button type="submit" disabled={loading}

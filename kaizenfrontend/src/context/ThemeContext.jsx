@@ -1,19 +1,47 @@
-import { createContext, useState, useEffect } from 'react';
+// src/context/ThemeContext.jsx
+import { useState, useEffect } from 'react';
+import { ThemeContext } from './ThemeContextValue';
 
-// eslint-disable-next-line react-refresh/only-export-components
-export const ThemeContext = createContext();
-
-export function ThemeProvider({ children }) {
-  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
+export const ThemeProvider = ({ children }) => {
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    // Check system preference
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
-  }, [dark]);
+    // CRITICAL: Remove both classes first, then add the current one
+    const root = document.documentElement;
+    root.classList.remove('light-theme', 'dark-theme');
+    root.classList.add(`${theme}-theme`);
+    
+    // Also apply to body for safety
+    document.body.classList.remove('light-theme', 'dark-theme');
+    document.body.classList.add(`${theme}-theme`);
+    
+    // Save to localStorage
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
+  // NEW: Direct function to set theme to light or dark
+  const setThemeMode = (newTheme) => {
+    if (newTheme === 'light' || newTheme === 'dark') {
+      setTheme(newTheme);
+    }
+  };
 
   return (
-    <ThemeContext.Provider value={{ dark, toggle: () => setDark(d => !d) }}>
+    <ThemeContext.Provider value={{ 
+      theme, 
+      toggleTheme,
+      setThemeMode  // Add this to the provider value
+    }}>
       {children}
     </ThemeContext.Provider>
   );
-}
+};

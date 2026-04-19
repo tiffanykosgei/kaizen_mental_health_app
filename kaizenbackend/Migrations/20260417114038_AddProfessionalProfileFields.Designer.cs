@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using kaizenbackend.Data;
@@ -11,9 +12,11 @@ using kaizenbackend.Data;
 namespace kaizenbackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260417114038_AddProfessionalProfileFields")]
+    partial class AddProfessionalProfileFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -179,7 +182,7 @@ namespace kaizenbackend.Migrations
                             Id = 1,
                             DefaultPlatformPercentage = 40,
                             DefaultProfessionalPercentage = 60,
-                            UpdatedAt = new DateTime(2026, 4, 18, 8, 7, 41, 986, DateTimeKind.Utc).AddTicks(3621)
+                            UpdatedAt = new DateTime(2026, 4, 17, 11, 40, 24, 369, DateTimeKind.Utc).AddTicks(3556)
                         });
                 });
 
@@ -215,6 +218,10 @@ namespace kaizenbackend.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<string>("Languages")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("LicenseNumber")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -245,7 +252,7 @@ namespace kaizenbackend.Migrations
                         .HasDefaultValue(0m);
 
                     b.Property<string>("ProfessionalLinks")
-                        .HasColumnType("text");
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("Specialization")
                         .IsRequired()

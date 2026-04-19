@@ -5,15 +5,15 @@ import { GoogleLogin } from '@react-oauth/google';
 import API from '../api/axios';
 
 const roleConfig = {
-  client:       { label: 'Client',       icon: '🧠', color: '#e91e8c', desc: 'Sign in to your wellness account' },
-  professional: { label: 'Professional', icon: '👩‍⚕️', color: '#00c98d', desc: 'Sign in to your professional account' },
-  admin:        { label: 'Admin',        icon: '🛡️', color: '#7c63ff', desc: 'Sign in to the admin panel' }
+  client:       { label: 'Client',       icon: '🧠', color: 'var(--primary)', desc: 'Sign in to your wellness account' },
+  professional: { label: 'Professional', icon: '👩‍⚕️', color: 'var(--secondary)', desc: 'Sign in to your professional account' },
+  admin:        { label: 'Admin',        icon: '🛡️', color: 'var(--accent)', desc: 'Sign in to the admin panel' }
 };
 
 export default function Login() {
   const { role } = useParams();
   const navigate = useNavigate();
-  const { dark, toggle } = useTheme();
+  const { dark, toggleTheme } = useTheme();
   const config = roleConfig[role] || roleConfig.client;
 
   const [form, setForm] = useState({ email: '', password: '' });
@@ -34,6 +34,7 @@ export default function Login() {
     localStorage.setItem('firstName', finalFirstName);
     localStorage.setItem('lastName', finalLastName);
 
+    // Redirect to dashboard - the DashboardRouter will handle which dashboard to show
     navigate('/dashboard');
   };
 
@@ -102,14 +103,14 @@ export default function Login() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
       <div style={{ position: 'absolute', top: 20, right: 24 }}>
-        <button onClick={toggle} className={`theme-toggle ${dark ? 'dark' : ''}`} type="button">
+        <button onClick={toggleTheme} className={`theme-toggle ${dark ? 'dark' : ''}`} type="button">
           <div className="theme-toggle-thumb" />
         </button>
       </div>
 
-      <div style={{ width: '100%', maxWidth: 440, background: 'var(--bg-card)', borderRadius: 20, border: '1.5px solid var(--border)', padding: '40px 36px', boxShadow: 'var(--shadow)' }}>
+      <div style={{ width: '100%', maxWidth: 440, background: 'var(--bg-card)', borderRadius: 20, border: '1.5px solid var(--border)', padding: '40px 36px', boxShadow: 'var(--shadow-md)' }}>
 
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: 44, marginBottom: 12 }}>{config.icon}</div>
@@ -122,7 +123,7 @@ export default function Login() {
         </div>
 
         {error && (
-          <div style={{ background: '#FCEBEB', color: '#791F1F', padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13, lineHeight: 1.5 }}>
+          <div style={{ background: 'var(--error-bg)', color: 'var(--error-text)', padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13, lineHeight: 1.5 }}>
             {error}
           </div>
         )}
