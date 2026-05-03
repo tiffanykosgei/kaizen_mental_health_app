@@ -518,6 +518,55 @@ namespace kaizenbackend.Controllers
             return Ok(new { message = "Resource removed successfully." });
         }
 
+        // PUT: api/admin/professionals/{id}/external-link
+[HttpPut("professionals/{id}/external-link")]
+public async Task<IActionResult> UpdateProfessionalExternalLink(int id, [FromBody] UpdateExternalLinkDto dto)
+{
+    if (!IsAdmin()) return Forbid();
+    
+    var user = await _context.Users
+        .Include(u => u.ProfessionalProfile)
+        .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
+
+    if (user == null)
+        return NotFound(new { message = "Professional not found." });
+
+    if (user.ProfessionalProfile == null)
+    {
+        user.ProfessionalProfile = new ProfessionalProfile { UserId = user.Id };
+        _context.ProfessionalProfiles.Add(user.ProfessionalProfile);
+    }
+
+    // Validate URL format if provided
+    if (!string.IsNullOrEmpty(dto.ExternalProfileUrl))
+    {
+        if (!Uri.TryCreate(dto.ExternalProfileUrl, UriKind.Absolute, out Uri? uriResult) ||
+            (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
+        {
+            return BadRequest(new { message = "Please enter a valid URL starting with http:// or https://" });
+        }
+        user.ProfessionalProfile.ExternalProfileUrl = dto.ExternalProfileUrl;
+    }
+    else
+    {
+        user.ProfessionalProfile.ExternalProfileUrl = null;
+    }
+
+    await _context.SaveChangesAsync();
+
+    return Ok(new 
+    { 
+        message = "External profile link updated successfully.",
+        externalProfileUrl = user.ProfessionalProfile.ExternalProfileUrl
+    });
+}
+
+// DTO for updating external link
+public class UpdateExternalLinkDto
+{
+    public string? ExternalProfileUrl { get; set; }
+}
+
         // Helper
         private int GetPercentageFromRating(decimal rating)
         {

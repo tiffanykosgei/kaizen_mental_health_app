@@ -6,6 +6,7 @@ export default function AdminProfile() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [profilePicturePreview, setProfilePicturePreview] = useState('');
   const [user, setUser] = useState({
     firstName: '',
     lastName: '',
@@ -25,6 +26,13 @@ export default function AdminProfile() {
       const userRes = await API.get('/auth/profile');
       const userData = userRes.data;
       setUser(userData);
+
+      if (userData.profilePicture) {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        setProfilePicturePreview(`${baseUrl}${userData.profilePicture}`);
+      } else {
+        setProfilePicturePreview('');
+      }
     } catch (err) {
       console.error(err);
       setError('Could not load profile information.');
@@ -158,9 +166,14 @@ export default function AdminProfile() {
             justifyContent: 'center',
             fontSize: 42,
             fontWeight: 600,
-            color: 'white'
+            color: 'white',
+            overflow: 'hidden',
+            flexShrink: 0
           }}>
-            {user.firstName?.charAt(0).toUpperCase()}{user.lastName?.charAt(0).toUpperCase()}
+            {profilePicturePreview
+              ? <img src={profilePicturePreview} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <span>{user.firstName?.charAt(0).toUpperCase()}{user.lastName?.charAt(0).toUpperCase()}</span>
+            }
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>

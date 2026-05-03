@@ -60,7 +60,7 @@ export default function RegisterClient() {
     
     try {
       await API.post('/auth/send-verification', { email });
-      setIsCodeSent(true); // This is now being used!
+      setIsCodeSent(true);
       setCountdown(60);
       
       const timer = setInterval(() => {
@@ -126,7 +126,19 @@ export default function RegisterClient() {
         localStorage.setItem('fullName', data.fullName);
         localStorage.setItem('firstName', data.firstName);
         localStorage.setItem('lastName', data.lastName);
-        navigate('/dashboard');
+        
+        // After successful registration, check if assessment has been completed
+        try {
+          const hasCompletedRes = await API.get('/selfassessment/has-completed');
+          if (!hasCompletedRes.data.hasCompleted) {
+            navigate('/assessment');
+          } else {
+            navigate('/dashboard');
+          }
+        } catch (err) {
+          console.error('Failed to check assessment status:', err);
+          navigate('/dashboard');
+        }
       }
     } catch (err) {
       setErrors({ submit: err.response?.data?.message || 'Google sign-up failed.' });
@@ -168,7 +180,18 @@ export default function RegisterClient() {
       localStorage.setItem('firstName', data.firstName);
       localStorage.setItem('lastName', data.lastName);
       
-      navigate('/dashboard');
+      // After successful registration, check if assessment has been completed
+      try {
+        const hasCompletedRes = await API.get('/selfassessment/has-completed');
+        if (!hasCompletedRes.data.hasCompleted) {
+          navigate('/assessment');
+        } else {
+          navigate('/dashboard');
+        }
+      } catch (err) {
+        console.error('Failed to check assessment status:', err);
+        navigate('/dashboard');
+      }
     } catch (err) {
       setErrors({ submit: err.response?.data?.message || 'Registration failed.' });
     } finally {

@@ -33,7 +33,6 @@ import CompleteProfile from './pages/CompleteProfile';
 import AssessmentHistory from './pages/AssessmentHistory';
 import ProfessionalAssessmentHistory from './pages/ProfessionalAssessmentHistory';
 import Settings from './pages/Settings';
-import Reports from './pages/Reports';
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -67,10 +66,22 @@ function ProfileRouter() {
   }
 }
 
+// Component to render the correct sessions page based on user role
+function SessionsRouter() {
+  const role = localStorage.getItem('role');
+  
+  if (role === 'Professional') {
+    return <ProfessionalSessions />;
+  } else {
+    return <ClientSessions />;
+  }
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/register/client" element={<RegisterClient />} />
         <Route path="/register/professional" element={<RegisterProfessional />} />
@@ -91,39 +102,112 @@ export default function App() {
         <Route path="/client" element={<Navigate to="/dashboard" />} />
         
         {/* Assessment Routes */}
-        <Route path="/assessment" element={<ProtectedRoute><Assessment /></ProtectedRoute>} />
-        <Route path="/assessment-history" element={<ProtectedRoute><AssessmentHistory /></ProtectedRoute>} />
+        <Route path="/assessment" element={
+          <ProtectedRoute>
+            <Assessment />
+          </ProtectedRoute>
+        } />
+        <Route path="/assessment-history" element={
+          <ProtectedRoute>
+            <AssessmentHistory />
+          </ProtectedRoute>
+        } />
+        
+        {/* Professional Assessment History - FIXED ROUTE */}
+        <Route path="/professional-assessment-history/:clientId" element={
+          <ProtectedRoute>
+            <ProfessionalAssessmentHistory />
+          </ProtectedRoute>
+        } />
         
         {/* Resource Routes */}
-        <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
-        <Route path="/upload-resource" element={<ProtectedRoute><UploadResource /></ProtectedRoute>} />
+        <Route path="/resources" element={
+          <ProtectedRoute>
+            <Resources />
+          </ProtectedRoute>
+        } />
+        <Route path="/upload-resource" element={
+          <ProtectedRoute>
+            <UploadResource />
+          </ProtectedRoute>
+        } />
         
         {/* Journal Routes */}
-        <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
+        <Route path="/journal" element={
+          <ProtectedRoute>
+            <Journal />
+          </ProtectedRoute>
+        } />
         
-        {/* Session Routes */}
-        <Route path="/sessions" element={<ProtectedRoute><ClientSessions /></ProtectedRoute>} />
-        <Route path="/professional-sessions" element={<ProtectedRoute><ProfessionalSessions /></ProtectedRoute>} />
+        {/* Session Routes - SINGLE ROUTE that shows correct component based on role */}
+        <Route path="/sessions" element={
+          <ProtectedRoute>
+            <SessionsRouter />
+          </ProtectedRoute>
+        } />
+        
+        {/* Keep professional-sessions as redirect for backward compatibility */}
+        <Route path="/professional-sessions" element={
+          <Navigate to="/sessions" />
+        } />
         
         {/* Admin Routes */}
-        <Route path="/admin/users" element={<ProtectedRoute><AdminUsers /></ProtectedRoute>} />
-        <Route path="/admin/sessions" element={<ProtectedRoute><AdminSessions /></ProtectedRoute>} />
-        <Route path="/admin/assessments" element={<ProtectedRoute><AdminAssessments /></ProtectedRoute>} />
-        <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
-        <Route path="/admin/revenue" element={<ProtectedRoute><AdminRevenue /></ProtectedRoute>} />
-        <Route path="/admin/payouts" element={<ProtectedRoute><AdminPayouts /></ProtectedRoute>} />
-        <Route path="/admin/users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+        <Route path="/admin/users" element={
+          <ProtectedRoute>
+            <AdminUsers />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/sessions" element={
+          <ProtectedRoute>
+            <AdminSessions />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/assessments" element={
+          <ProtectedRoute>
+            <AdminAssessments />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/resources" element={
+          <ProtectedRoute>
+            <AdminResources />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/revenue" element={
+          <ProtectedRoute>
+            <AdminRevenue />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/payouts" element={
+          <ProtectedRoute>
+            <AdminPayouts />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/users/:userId" element={
+          <ProtectedRoute>
+            <UserProfile />
+          </ProtectedRoute>
+        } />
         
         {/* Professional Routes */}
-        <Route path="/professional-payment" element={<ProtectedRoute><ProfessionalPayment /></ProtectedRoute>} />
-        <Route path="/professional/client/:clientId/assessments" element={<ProtectedRoute><ProfessionalAssessmentHistory /></ProtectedRoute>} />
+        <Route path="/professional-payment" element={
+          <ProtectedRoute>
+            <ProfessionalPayment />
+          </ProtectedRoute>
+        } />
         
         {/* Profile Routes */}
-        <Route path="/profile" element={<ProtectedRoute><ProfileRouter /></ProtectedRoute>} />
+        <Route path="/profile" element={
+          <ProtectedRoute>
+            <ProfileRouter />
+          </ProtectedRoute>
+        } />
         
         {/* Settings Route */}
-        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/settings" element={
+          <ProtectedRoute>
+            <Settings />
+          </ProtectedRoute>
+        } />
         
         {/* Catch all - redirect to dashboard if logged in, otherwise to landing */}
         <Route path="*" element={<Navigate to="/" />} />

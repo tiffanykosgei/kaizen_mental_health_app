@@ -59,7 +59,6 @@ namespace kaizenbackend.Controllers
                 }
 
                 var roomName = $"kaizen-session-{session.Id}";
-                // Room expires 2 hours after session start (1hr session + 1hr buffer)
                 var expiryTime = session.SessionDate.AddHours(2);
                 if (expiryTime < DateTime.UtcNow)
                     expiryTime = DateTime.UtcNow.AddHours(2);
@@ -68,7 +67,6 @@ namespace kaizenbackend.Controllers
                 if (expiryMinutes < 60) expiryMinutes = 120;
 
                 _logger.LogInformation($"Creating Daily.co room '{roomName}' for session {session.Id}");
-
                 var result = await _dailyService.CreateRoom(roomName, expiryMinutes);
 
                 if (result.Success && !string.IsNullOrEmpty(result.RoomUrl))
@@ -88,11 +86,13 @@ namespace kaizenbackend.Controllers
             }
         }
 
+        // GET api/session/professionals
         [HttpGet("professionals")]
         public async Task<IActionResult> GetProfessionals()
         {
             var professionals = await _context.Users
                 .Where(u => u.Role == "Professional")
+                .Include(u => u.ProfessionalProfile)
                 .Select(u => new
                 {
                     u.Id,
@@ -104,6 +104,11 @@ namespace kaizenbackend.Controllers
                     {
                         u.ProfessionalProfile.Bio,
                         u.ProfessionalProfile.Specialization,
+                        u.ProfessionalProfile.YearsOfExperience,
+                        u.ProfessionalProfile.Education,
+                        u.ProfessionalProfile.Certifications,
+                        u.ProfessionalProfile.LicenseNumber,
+                        u.ProfessionalProfile.Experience,
                         u.ProfessionalProfile.AverageRating
                     } : null
                 })
@@ -258,8 +263,6 @@ namespace kaizenbackend.Controllers
             }
         }
 
-        // Correct flow: Professional confirms → client pays → video room created.
-        // Video room is NOT created on confirmation alone — only if payment is already done.
         [HttpPut("{id}/status")]
         public async Task<IActionResult> UpdateStatus(int id, UpdateSessionDto dto)
         {
@@ -288,9 +291,6 @@ namespace kaizenbackend.Controllers
 
                 _logger.LogInformation($"UpdateStatus: Session {session.Id} → {dto.Status}, PaymentStatus: {session.PaymentStatus}");
 
-                // Only create video room if BOTH confirmed AND already paid.
-                // Normal flow: payment comes after confirmation, so room is created in PaymentController callback.
-                // This handles the edge case where payment was completed before professional confirmed.
                 if (dto.Status == "Confirmed"
                     && session.PaymentStatus == "Paid"
                     && string.IsNullOrEmpty(session.MeetingUrl))
@@ -397,7 +397,6 @@ namespace kaizenbackend.Controllers
                     s.Notes,
                     s.MeetingUrl,
                     s.MeetingRoomName,
-                    // CanJoin is true only within the 1-hour session window (5 min early → session end)
                     CanJoin = !string.IsNullOrEmpty(s.MeetingUrl)
                               && s.Status == "Confirmed"
                               && s.PaymentStatus == "Paid"

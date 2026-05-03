@@ -3,6 +3,16 @@ import API from '../../api/axios';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+
+const PINK = '#e91e8c';
+const PURPLE = '#9c27b0';
+const PINK_LIGHT = 'rgba(233,30,140,0.1)';
+const PURPLE_LIGHT = 'rgba(156,39,176,0.1)';
+
+// Conversion factor: backend uses KES 10, frontend needs KES 1500
+// 1500 / 10 = 150
+const CONVERSION_FACTOR = 150;
 
 export default function AdminPayouts() {
   const [professionals, setProfessionals] = useState([]);
@@ -11,12 +21,13 @@ export default function AdminPayouts() {
   const [processingId, setProcessingId] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [showManualModal, setShowManualModal] = useState(null);
+  const [receiptModal, setReceiptModal] = useState(null);
+  const [downloadLoading, setDownloadLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [hasPendingFilter, setHasPendingFilter] = useState('all');
   const [showExportMenu, setShowExportMenu] = useState(false);
-  //const [showTransactionReceiptModal, setShowTransactionReceiptModal] = useState(null);
 
   useEffect(() => { fetchProfessionals(); }, []);
 
@@ -24,7 +35,18 @@ export default function AdminPayouts() {
     setLoading(true);
     try {
       const res = await API.get('/payment/professional-breakdown');
-      setProfessionals(res.data.professionals || []);
+      // Convert amounts from backend (based on KES 10) to KES 1500
+      // totalEarned = number of sessions * 900 (60% of 1500)
+      // pendingPayout = backend pending * CONVERSION_FACTOR (converts from old system to new)
+      // paidOut = backend paidOut * CONVERSION_FACTOR (converts from old system to new)
+      const updatedProfessionals = (res.data.professionals || []).map(pro => ({
+        ...pro,
+        totalEarned: (pro.totalSessions || 0) * 900,
+        platformFees: (pro.totalSessions || 0) * 600,
+        pendingPayout: (pro.pendingPayout || 0) * CONVERSION_FACTOR,
+        paidOut: (pro.paidOut || 0) * CONVERSION_FACTOR
+      }));
+      setProfessionals(updatedProfessionals);
     } catch (err) {
       console.error(err);
       setError('Could not load professional payment data.');
@@ -46,61 +68,54 @@ export default function AdminPayouts() {
     return filtered;
   };
 
-  // Generate Transaction Receipt for a specific payout (for past payouts)
-  const generateTransactionReceipt = (professional, amount, date = new Date(), reference = null) => {
+  const openReceiptModal = (professional) => {
+    setReceiptModal(professional);
+  };
+
+  const downloadReceiptAsPDF = async () => {
+    setDownloadLoading(true);
+    const receiptElement = document.getElementById('receipt-content');
+    if (!receiptElement) {
+      setDownloadLoading(false);
+      return;
+    }
+    
     try {
-      const doc = new jsPDF();
-      const transactionDate = new Date(date);
-      const transactionRef = reference || `PAY-${professional.professionalId}-${Date.now()}`;
-      
-      doc.setFontSize(20);
-      doc.setTextColor(233, 30, 140);
-      doc.text('Kaizen Mental Wellness', 20, 20);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(100, 100, 100);
-      doc.text('TRANSACTION RECEIPT', 20, 35);
-      doc.text(`Date Issued: ${new Date().toLocaleDateString()}`, 20, 45);
-      doc.text(`Transaction Ref: ${transactionRef}`, 20, 52);
-      
-      doc.line(20, 58, 190, 58);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text('Transaction Details', 20, 70);
-      
-      const tableData = [
-        ['Transaction Type', 'Professional Payout'],
-        ['Professional Name', professional.professionalName],
-        ['Professional Email', professional.professionalEmail],
-        ['Payment Method', professional.paymentMethod || 'Manual Transfer'],
-        ['Payment Account', professional.paymentAccount || 'N/A'],
-        ['Amount Paid', `KSh ${amount.toLocaleString()}`],
-        ['Payment Date', transactionDate.toLocaleString()],
-        ['Status', 'Completed'],
-        ['Processed By', 'Admin']
-      ];
-      
-      doc.autoTable({
-        startY: 78,
-        head: [['Field', 'Value']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
-        margin: { left: 20, right: 20 }
+      const canvas = await html2canvas(receiptElement, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        logging: false
       });
       
-      const finalY = doc.lastAutoTable.finalY + 10;
-      doc.setFontSize(10);
-      doc.setTextColor(150, 150, 150);
-      doc.text('Thank you for using Kaizen Mental Wellness platform', 20, finalY);
-      doc.text('This is an official transaction receipt', 20, finalY + 7);
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
       
-      doc.save(`transaction_receipt_${professional.professionalName.replace(/\s/g, '_')}_${Date.now()}.pdf`);
-      return true;
-    } catch (err) {
-      console.error('Transaction receipt generation failed:', err);
-      return false;
+      const imgWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      pdf.save(`payout_receipt_${receiptModal.professionalName.replace(/\s/g, '_')}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to download receipt. Please try again.');
+    } finally {
+      setDownloadLoading(false);
     }
   };
 
@@ -166,7 +181,7 @@ export default function AdminPayouts() {
       'Email': p.professionalEmail, 
       'Payment Method': p.paymentMethod || 'Not set', 
       'Payment Account': p.paymentAccount || 'Not set', 
-      'Total Earned (KSh)': p.totalEarned || 0, 
+      'Total Earned (KSh)': (p.totalSessions || 0) * 900, 
       'Pending Payout (KSh)': p.pendingPayout || 0, 
       'Paid Out (KSh)': p.paidOut || 0, 
       'Total Sessions': p.totalSessions || 0, 
@@ -198,7 +213,7 @@ export default function AdminPayouts() {
         p.professionalName,
         p.professionalEmail,
         p.paymentMethod || 'Not set',
-        `KSh ${(p.totalEarned || 0).toLocaleString()}`,
+        `KSh ${((p.totalSessions || 0) * 900).toLocaleString()}`,
         `KSh ${(p.pendingPayout || 0).toLocaleString()}`,
         `KSh ${(p.paidOut || 0).toLocaleString()}`,
         p.totalSessions?.toString() || '0'
@@ -237,32 +252,19 @@ export default function AdminPayouts() {
       });
       const professional = professionals.find(p => p.professionalId === showManualModal.professionalId);
       if (professional) {
-        // Generate both payout receipt and transaction receipt
         const payoutReceiptGenerated = generatePayoutReceipt(professional, showManualModal.amount, res.data.sessionsProcessed);
-        const transactionReceiptGenerated = generateTransactionReceipt(professional, showManualModal.amount, new Date(), `PAY-${professional.professionalId}-${Date.now()}`);
         
-        if (!payoutReceiptGenerated || !transactionReceiptGenerated) {
+        if (!payoutReceiptGenerated) {
           setError('Payment processed but receipt generation had issues. Please check console.');
         }
       }
-      setSuccessMsg(`✅ Payout marked as completed for ${showManualModal.name}!\n\nAmount: KSh ${showManualModal.amount.toLocaleString()}\nSessions: ${res.data.sessionsProcessed}\n\n📄 Payout Receipt and Transaction Receipt have been downloaded automatically.\n\n⚠️ IMPORTANT: Remember to send the money to:\n${showManualModal.paymentMethod}: ${maskAccountNumber(showManualModal.paymentAccount, showManualModal.paymentMethod)}`);
+      setSuccessMsg(`✅ Payout marked as completed for ${showManualModal.name}!\n\nAmount: KSh ${showManualModal.amount.toLocaleString()}\nSessions: ${res.data.sessionsProcessed}\n\n📄 Payout Receipt has been downloaded automatically.\n\n⚠️ IMPORTANT: Remember to send the money to:\n${showManualModal.paymentMethod}: ${maskAccountNumber(showManualModal.paymentAccount, showManualModal.paymentMethod)}`);
       fetchProfessionals();
       setShowManualModal(null);
     } catch (err) { 
       setError(err.response?.data?.message || `Failed to process payout for ${showManualModal.name}.`); 
     } finally { 
       setProcessingId(null); 
-    }
-  };
-
-  // Generate transaction receipt for a professional's past payout
-  const handleGenerateTransactionReceipt = (professional) => {
-    const amount = professional.paidOut || 0;
-    if (amount > 0) {
-      generateTransactionReceipt(professional, amount);
-    } else {
-      setError('No paid out amount found for this professional.');
-      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -334,7 +336,7 @@ export default function AdminPayouts() {
               <li>Send <strong>{formatCurrency(showManualModal.amount)}</strong> to the professional via their payment method below</li>
               <li>Confirm the transaction was successful</li>
               <li>Click "Confirm & Mark as Paid" to update the system</li>
-              <li>Both Payout Receipt and Transaction Receipt will be downloaded automatically</li>
+              <li>Payout Receipt will be downloaded automatically</li>
             </ol>
           </div>
           <div style={{ background: 'var(--info-bg)', padding: 16, borderRadius: 12, marginBottom: 20 }}>
@@ -450,7 +452,7 @@ export default function AdminPayouts() {
                   <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
                     <div>
                       <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 2px' }}>Total earned</p>
-                      <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{formatCurrency(pro.totalEarned)}</p>
+                      <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{formatCurrency((pro.totalSessions || 0) * 900)}</p>
                     </div>
                     <div>
                       <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 2px' }}>Pending payout</p>
@@ -469,20 +471,20 @@ export default function AdminPayouts() {
                   <div style={{ display: 'flex', gap: 8 }}>
                     {hasBeenPaid && (
                       <button
-                        onClick={() => handleGenerateTransactionReceipt(pro)}
+                        onClick={() => openReceiptModal(pro)}
                         style={{
                           padding: '10px 16px',
                           borderRadius: 8,
                           fontSize: 12,
                           fontWeight: 600,
                           border: 'none',
-                          background: '#9c27b0',
+                          background: 'linear-gradient(135deg, #9c27b0, #e91e8c)',
                           color: 'white',
                           cursor: 'pointer',
                           transition: 'all 0.2s ease'
                         }}
                       >
-                        📄 Transaction Receipt
+                        🧾 View Receipt
                       </button>
                     )}
                     <button
@@ -536,6 +538,96 @@ export default function AdminPayouts() {
           </div>
         </div>
       </div>
+
+      {/* Receipt Modal */}
+      {receiptModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={() => setReceiptModal(null)}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 18, maxWidth: 460, width: '100%', border: `1.5px solid ${PINK}`, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div id="receipt-content" style={{ padding: 32, overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div>
+                  <h3 style={{ fontSize: 20, fontWeight: 700, color: PURPLE, margin: 0 }}>🧾 Payout Receipt</h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>Professional Payment Confirmation</p>
+                </div>
+              </div>
+
+              <div style={{ background: `linear-gradient(135deg, ${PINK_LIGHT}, ${PURPLE_LIGHT})`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>🧾</div>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: PURPLE, margin: 0 }}>Kaizen Mental Health Platform</p>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '4px 0 0' }}>Official Payout Receipt</p>
+                </div>
+
+                <div style={{ height: 1, background: `linear-gradient(90deg, ${PINK}, ${PURPLE})`, marginBottom: 16 }} />
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Receipt Number</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>PAY-{receiptModal.professionalId}-{Date.now()}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Transaction Date</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>
+                    {new Date().toLocaleString('en-KE', {
+                      year: 'numeric', month: 'long', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Professional</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: PURPLE, margin: '4px 0 0' }}>{receiptModal.professionalName}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Email</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.professionalEmail}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Payment Method</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.paymentMethod || 'Manual Transfer'}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Payment Account</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.paymentAccount || 'N/A'}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Total Sessions</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.totalSessions || 0}</p>
+                </div>
+
+                <div style={{ background: 'var(--bg-hover)', borderRadius: 8, padding: '12px 16px', marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Total Amount Paid</p>
+                    <p style={{ fontSize: 20, fontWeight: 700, color: PINK, margin: 0 }}>KSh {(receiptModal.paidOut || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: 0 }}>
+                  Thank you for being a Kaizen Mental Wellness partner
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                  This is a system-generated payout receipt
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '0 32px 32px 32px', borderTop: '1px solid var(--border)', paddingTop: 24 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setReceiptModal(null)} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: 'transparent', color: PINK, border: `1.5px solid ${PINK}`, borderRadius: 10, cursor: 'pointer' }}>Close</button>
+                <button onClick={() => window.print()} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: `linear-gradient(135deg, ${PINK}, ${PURPLE})`, color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer' }}>🖨️ Print</button>
+                <button onClick={downloadReceiptAsPDF} disabled={downloadLoading} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: downloadLoading ? 'var(--border)' : `linear-gradient(135deg, ${PINK}, ${PURPLE})`, color: 'white', border: 'none', borderRadius: 10, cursor: downloadLoading ? 'not-allowed' : 'pointer', opacity: downloadLoading ? 0.6 : 1 }}>{downloadLoading ? 'Downloading...' : '📥 Download PDF'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       <div style={{ marginTop: 24, padding: 12, background: 'var(--bg-hover)', borderRadius: 8, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
         🔒 For security reasons, bank account numbers are partially masked. Full details are only shown when processing a payout.
@@ -548,11 +640,11 @@ export default function AdminPayouts() {
           <li>A modal will show you their payment details (M-Pesa number or Bank account)</li>
           <li>Manually send the money using M-Pesa or your banking app</li>
           <li>After successful transfer, click "Confirm & Mark as Paid"</li>
-          <li>The system will mark all pending sessions as paid and download both Payout Receipt and Transaction Receipt</li>
-          <li>For past payouts, click "Transaction Receipt" to generate a receipt anytime</li>
+          <li>The system will mark all pending sessions as paid and download Payout Receipt</li>
+          <li>For past payouts, click "View Receipt" to generate a receipt anytime</li>
         </ol>
         <p style={{ marginTop: 12, fontSize: 12, color: 'var(--info-text)' }}>
-          💡 <strong>Tip:</strong> Keep the downloaded receipts for your records. Transaction receipts can be regenerated anytime.
+          💡 <strong>Tip:</strong> Keep the downloaded receipts for your records. Payout receipts can be regenerated anytime.
         </p>
       </div>
     </div>

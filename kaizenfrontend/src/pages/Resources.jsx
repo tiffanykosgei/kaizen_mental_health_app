@@ -82,6 +82,9 @@ export default function Resources() {
   const [resourceRatings, setResourceRatings] = useState({});
   const [successMsg, setSuccessMsg] = useState('');
 
+  const userRole = localStorage.getItem('role');
+  const isProfessional = userRole === 'Professional';
+
   useEffect(() => {
     fetchResources();
   }, []);
@@ -91,30 +94,40 @@ export default function Resources() {
   }, [all, browseSearchTerm, browseTypeFilter, browseCategoryFilter, browseRatingFilter, browseDateRange, browseSortBy]);
 
   useEffect(() => {
-    applyMyResourcesFilters();
-  }, [myResources, mySearchTerm, myTypeFilter, myCategoryFilter, myRatingFilter, myDateRange, mySortBy]);
+    if (isProfessional) {
+      applyMyResourcesFilters();
+    }
+  }, [myResources, mySearchTerm, myTypeFilter, myCategoryFilter, myRatingFilter, myDateRange, mySortBy, isProfessional]);
 
   const fetchResources = async () => {
     setLoading(true);
     try {
-      const [recRes, allRes, myRes] = await Promise.all([
+      const [recRes, allRes] = await Promise.all([
         API.get('/resource/recommended'),
-        API.get('/resource/all'),
-        API.get('/resource/my-uploads').catch(() => ({ data: [] }))
+        API.get('/resource/all')
       ]);
       
       const recommendedData = recRes.data.resources || [];
       const allData = allRes.data || [];
-      const myResourcesData = myRes.data || [];
       
       setRecommended(recommendedData);
       setPrimaryConcern(recRes.data.primaryConcern || '');
       setAll(allData);
-      setMyResources(myResourcesData);
       setFilteredAllResources(allData);
-      setFilteredMyResources(myResourcesData);
       
-      const allResources = [...recommendedData, ...allData, ...myResourcesData];
+      // Only fetch my resources for professionals
+      if (isProfessional) {
+        try {
+          const myRes = await API.get('/resource/my-uploads');
+          const myResourcesData = myRes.data || [];
+          setMyResources(myResourcesData);
+          setFilteredMyResources(myResourcesData);
+        } catch (err) {
+          console.error('Error fetching my resources:', err);
+        }
+      }
+      
+      const allResources = [...recommendedData, ...allData];
       const uniqueResources = Array.from(new Map(allResources.map(r => [r.id, r])).values());
       
       for (const resource of uniqueResources) {
@@ -409,21 +422,20 @@ export default function Resources() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
-            <button 
-              onClick={() => navigate('/upload-resource')}
-              style={{ 
-                background: `linear-gradient(135deg, ${PINK}, ${PURPLE})`, 
-                color: 'white', 
-                border: 'none', 
-                padding: '8px 20px', 
-                fontSize: 13,
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontWeight: 500
-              }}
-            >
-              + Upload New Resource
-            </button>
+            {/* Only professionals can upload */}
+            {isProfessional && (
+              <button
+                onClick={() => navigate('/upload-resource')}
+                style={{
+                  background: `linear-gradient(135deg, ${PINK}, ${PURPLE})`,
+                  color: 'white', border: 'none',
+                  padding: '8px 20px', fontSize: 13, borderRadius: 8,
+                  cursor: 'pointer', fontWeight: 500
+                }}
+              >
+                + Upload New Resource
+              </button>
+            )}
             <button 
               onClick={() => navigate('/dashboard')}
               style={{ 
@@ -444,41 +456,50 @@ export default function Resources() {
           </div>
         </div>
 
-        {/* Tab Switcher */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 24, borderBottom: '1px solid var(--border)' }}>
-          <button
-            onClick={() => setActiveTab('browse')}
-            style={{
-              background: 'transparent',
-              color: activeTab === 'browse' ? PINK : 'var(--text-muted)',
-              border: 'none',
-              borderBottom: activeTab === 'browse' ? `2px solid ${PINK}` : '2px solid transparent',
-              padding: '10px 0',
-              marginRight: 24,
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: activeTab === 'browse' ? 600 : 400
-            }}
-          >
-            Browse Resources ({all.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('myresources')}
-            style={{
-              background: 'transparent',
-              color: activeTab === 'myresources' ? PINK : 'var(--text-muted)',
-              border: 'none',
-              borderBottom: activeTab === 'myresources' ? `2px solid ${PINK}` : '2px solid transparent',
-              padding: '10px 0',
-              marginRight: 24,
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: activeTab === 'myresources' ? 600 : 400
-            }}
-          >
-            My Resources ({myResources.length})
-          </button>
-        </div>
+        {/* Tab Switcher - Only show both tabs for professionals */}
+        {isProfessional ? (
+          <div style={{ display: 'flex', gap: 12, marginBottom: 24, borderBottom: '1px solid var(--border)' }}>
+            <button
+              onClick={() => setActiveTab('browse')}
+              style={{
+                background: 'transparent',
+                color: activeTab === 'browse' ? PINK : 'var(--text-muted)',
+                border: 'none',
+                borderBottom: activeTab === 'browse' ? `2px solid ${PINK}` : '2px solid transparent',
+                padding: '10px 0',
+                marginRight: 24,
+                cursor: 'pointer',
+                fontSize: 14,
+                fontWeight: activeTab === 'browse' ? 600 : 400
+              }}
+            >
+              Browse Resources ({all.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('myresources')}
+              style={{
+                background: 'transparent',
+                color: activeTab === 'myresources' ? PINK : 'var(--text-muted)',
+                border: 'none',
+                borderBottom: activeTab === 'myresources' ? `2px solid ${PINK}` : '2px solid transparent',
+                padding: '10px 0',
+                marginRight: 24,
+                cursor: 'pointer',
+                fontSize: 14,
+                fontWeight: activeTab === 'myresources' ? 600 : 400
+              }}
+            >
+              My Resources ({myResources.length})
+            </button>
+          </div>
+        ) : (
+          /* For clients, just show a simple header without the My Resources tab */
+          <div style={{ marginBottom: 24 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: PINK, margin: 0 }}>
+              Browse Resources ({all.length})
+            </h3>
+          </div>
+        )}
 
         {error && !showRatingModal && (
           <div style={{ background: 'rgba(233,30,140,0.1)', color: PINK, padding: '12px 16px', borderRadius: 8, marginBottom: 16, fontSize: 13, border: `1px solid ${PINK}` }}>
@@ -492,8 +513,8 @@ export default function Resources() {
           </div>
         )}
 
-        {/* BROWSE RESOURCES TAB - TABLE LAYOUT */}
-        {activeTab === 'browse' && (
+        {/* BROWSE RESOURCES TAB - TABLE LAYOUT (Visible for both clients and professionals) */}
+        {(activeTab === 'browse' || !isProfessional) && (
           <>
             {/* Recommended Section (Cards) */}
             {recommended.length > 0 && (
@@ -655,7 +676,7 @@ export default function Resources() {
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Upload Date</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Uploaded By</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
-                      </tr>
+                       </tr>
                     </thead>
                     <tbody>
                       {filteredAllResources.map(resource => {
@@ -670,31 +691,31 @@ export default function Resources() {
                               {resource.description && (
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{resource.description.substring(0, 60)}...</div>
                               )}
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <span style={{ fontSize: 20 }}>{typeIcons[resource.type] || '📄'}</span>
                               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{resource.type}</div>
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 500, background: catColor.bg, color: catColor.text }}>
                                 {resource.category}
                               </span>
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <StarDisplay averageRating={avgRating} />
                               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginTop: 4 }}>
                                 {avgRating > 0 ? avgRating.toFixed(1) : '—'}
                               </div>
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-primary)' }}>
                               {totalRatings}
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
                               {new Date(resource.dateUploaded).toLocaleDateString()}
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
                               {resource.uploadedBy || 'N/A'}
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                                 <a href={resource.url} target="_blank" rel="noopener noreferrer" style={{ padding: '4px 10px', borderRadius: 6, background: 'transparent', color: PINK, border: `1px solid ${PINK}`, textDecoration: 'none', fontSize: 11, cursor: 'pointer' }}>
@@ -704,7 +725,7 @@ export default function Resources() {
                                   Rate
                                 </button>
                               </div>
-                             </td>
+                            </td>
                           </tr>
                         );
                       })}
@@ -716,8 +737,8 @@ export default function Resources() {
           </>
         )}
 
-        {/* MY RESOURCES TAB - TABLE LAYOUT */}
-        {activeTab === 'myresources' && (
+        {/* MY RESOURCES TAB - TABLE LAYOUT (Only for professionals) */}
+        {isProfessional && activeTab === 'myresources' && (
           <>
             {/* Stats Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
@@ -852,28 +873,28 @@ export default function Resources() {
                               {resource.description && (
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{resource.description.substring(0, 60)}...</div>
                               )}
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <span style={{ fontSize: 20 }}>{typeIcons[resource.type] || '📄'}</span>
                               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{resource.type}</div>
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 500, background: catColor.bg, color: catColor.text }}>
                                 {resource.category}
                               </span>
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <StarDisplay averageRating={avgRating} />
                               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginTop: 4 }}>
                                 {avgRating > 0 ? avgRating.toFixed(1) : '—'}
                               </div>
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-primary)' }}>
                               {totalRatings}
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
                               {new Date(resource.dateUploaded).toLocaleDateString()}
-                             </td>
+                            </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                               <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                                 <a href={resource.url} target="_blank" rel="noopener noreferrer" style={{ padding: '4px 10px', borderRadius: 6, background: 'transparent', color: PINK, border: `1px solid ${PINK}`, textDecoration: 'none', fontSize: 11, cursor: 'pointer' }}>
@@ -883,7 +904,7 @@ export default function Resources() {
                                   Delete
                                 </button>
                               </div>
-                             </td>
+                            </td>
                           </tr>
                         );
                       })}

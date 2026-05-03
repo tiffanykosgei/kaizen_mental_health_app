@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using kaizenbackend.Data;
@@ -11,9 +12,11 @@ using kaizenbackend.Data;
 namespace kaizenbackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260422135807_AddProfilePictureAndExternalUrl")]
+    partial class AddProfilePictureAndExternalUrl
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -179,7 +182,7 @@ namespace kaizenbackend.Migrations
                             Id = 1,
                             DefaultPlatformPercentage = 40,
                             DefaultProfessionalPercentage = 60,
-                            UpdatedAt = new DateTime(2026, 4, 23, 6, 47, 49, 915, DateTimeKind.Utc).AddTicks(6752)
+                            UpdatedAt = new DateTime(2026, 4, 22, 13, 58, 5, 887, DateTimeKind.Utc).AddTicks(3108)
                         });
                 });
 
@@ -708,7 +711,7 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Resource");

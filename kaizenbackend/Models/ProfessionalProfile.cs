@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace kaizenbackend.Models
 {
@@ -13,9 +14,11 @@ namespace kaizenbackend.Models
         public string Education { get; set; } = "";
         public string Certifications { get; set; } = "";
         public string LicenseNumber { get; set; } = "";
+        public string Experience { get; set; } = "";
         
-        public ProfessionalLinks? ProfessionalLinks { get; set; }
-        // REMOVED: public List<string> Languages { get; set; } = new List<string>();
+        // External profile link (e.g., government registry, LinkedIn, official website)
+        [Url(ErrorMessage = "Please enter a valid URL")]
+        public string? ExternalProfileUrl { get; set; }
         
         public string PaymentMethod { get; set; } = "Mpesa";
         public string PaymentAccount { get; set; } = "";
@@ -26,12 +29,5 @@ namespace kaizenbackend.Models
         public decimal PaidOut { get; set; } = 0;
         
         public User User { get; set; } = null!;
-    }
-
-    public class ProfessionalLinks
-    {
-        public string Linkedin { get; set; } = "";
-        public string Website { get; set; } = "";
-        public string Portfolio { get; set; } = "";
     }
 }

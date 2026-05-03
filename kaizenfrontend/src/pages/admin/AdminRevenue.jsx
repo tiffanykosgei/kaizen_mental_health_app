@@ -4,6 +4,16 @@ import StatsCard from './components/StatsCard';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+
+const PINK = '#e91e8c';
+const PURPLE = '#9c27b0';
+const PINK_LIGHT = 'rgba(233,30,140,0.1)';
+const PURPLE_LIGHT = 'rgba(156,39,176,0.1)';
+
+// Conversion factor: backend uses KES 10, frontend needs KES 1500
+// 1500 / 10 = 150
+const CONVERSION_FACTOR = 150;
 
 export default function AdminRevenue() {
   const [summary, setSummary] = useState(null);
@@ -14,6 +24,8 @@ export default function AdminRevenue() {
   const [selectedPro, setSelectedPro] = useState(null);
   const [splitPercentage, setSplitPercentage] = useState('');
   const [showSplitModal, setShowSplitModal] = useState(false);
+  const [receiptModal, setReceiptModal] = useState(null);
+  const [downloadLoading, setDownloadLoading] = useState(false);
   
   // Filter and sort states
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,7 +34,6 @@ export default function AdminRevenue() {
   const [maxEarnings, setMaxEarnings] = useState('');
   const [hasPendingFilter, setHasPendingFilter] = useState('all');
   const [showExportMenu, setShowExportMenu] = useState(false);
-  //const [showPayoutReceiptModal, setShowPayoutReceiptModal] = useState(null);
 
   useEffect(() => {
     fetchRevenueData();
@@ -36,8 +47,24 @@ export default function AdminRevenue() {
     setLoading(true);
     try {
       const response = await API.get('/payment/professional-breakdown');
-      setSummary(response.data.summary);
-      setProfessionals(response.data.professionals || []);
+      // Convert amounts from backend (based on KES 10) to KES 1500
+      // totalEarned = number of sessions * 900 (60% of 1500)
+      // platformFees = number of sessions * 600 (40% of 1500)
+      // pendingPayout = backend pending * CONVERSION_FACTOR
+      // paidOut = backend paidOut * CONVERSION_FACTOR
+      const updatedProfessionals = (response.data.professionals || []).map(pro => ({
+        ...pro,
+        totalEarned: (pro.totalSessions || 0) * 900,
+        platformFees: (pro.totalSessions || 0) * 600,
+        pendingPayout: (pro.pendingPayout || 0) * CONVERSION_FACTOR,
+        paidOut: (pro.paidOut || 0) * CONVERSION_FACTOR
+      }));
+      setSummary({
+        ...response.data.summary,
+        totalPlatformFees: (response.data.summary?.totalPaidSessions || 0) * 600,
+        totalProfessionalEarnings: (response.data.summary?.totalPaidSessions || 0) * 900
+      });
+      setProfessionals(updatedProfessionals);
     } catch (err) {
       console.error(err);
       setError('Could not load revenue data.');
@@ -49,7 +76,6 @@ export default function AdminRevenue() {
   const applyFiltersAndSort = () => {
     let filtered = [...professionals];
     
-    // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(p => 
@@ -58,7 +84,6 @@ export default function AdminRevenue() {
       );
     }
     
-    // Earnings range filter
     if (minEarnings) {
       filtered = filtered.filter(p => (p.totalEarned || 0) >= parseFloat(minEarnings));
     }
@@ -66,14 +91,12 @@ export default function AdminRevenue() {
       filtered = filtered.filter(p => (p.totalEarned || 0) <= parseFloat(maxEarnings));
     }
     
-    // Pending filter
     if (hasPendingFilter === 'has_pending') {
       filtered = filtered.filter(p => (p.pendingPayout || 0) > 0);
     } else if (hasPendingFilter === 'no_pending') {
       filtered = filtered.filter(p => (p.pendingPayout || 0) === 0);
     }
     
-    // Sorting
     filtered.sort((a, b) => {
       switch(sortBy) {
         case 'name_asc':
@@ -102,7 +125,7 @@ export default function AdminRevenue() {
 
   const handleUpdateSplit = async () => {
     if (!selectedPro) return;
-    const percentage = parseInt(splitPercentage);
+    const percentage = parseInt(splitPercentage, 10);
     if (isNaN(percentage) || percentage < 40 || percentage > 80) {
       setError('Percentage must be between 40 and 80');
       return;
@@ -120,59 +143,54 @@ export default function AdminRevenue() {
     }
   };
 
-  // Generate Payout Receipt
-  const generatePayoutReceipt = (professional) => {
+  const openReceiptModal = (professional) => {
+    setReceiptModal(professional);
+  };
+
+  const downloadReceiptAsPDF = async () => {
+    setDownloadLoading(true);
+    const receiptElement = document.getElementById('receipt-content');
+    if (!receiptElement) {
+      setDownloadLoading(false);
+      return;
+    }
+    
     try {
-      const doc = new jsPDF();
-      const payoutDate = new Date();
-      
-      doc.setFontSize(20);
-      doc.setTextColor(233, 30, 140);
-      doc.text('Kaizen Mental Wellness', 20, 20);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(100, 100, 100);
-      doc.text('Professional Payout Receipt', 20, 35);
-      doc.text(`Date: ${payoutDate.toLocaleDateString()}`, 20, 45);
-      doc.text(`Receipt #: PAY-${professional.professionalId}-${Date.now()}`, 20, 52);
-      
-      doc.line(20, 58, 190, 58);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text('Payout Details', 20, 70);
-      
-      const tableData = [
-        ['Professional', professional.professionalName],
-        ['Email', professional.professionalEmail],
-        ['Payment Method', professional.paymentMethod || 'Manual Transfer'],
-        ['Payment Account', professional.paymentAccount || 'N/A'],
-        ['Total Paid Out', `KSh ${(professional.paidOut || 0).toLocaleString()}`],
-        ['Sessions Processed', professional.totalSessions?.toString() || '0'],
-        ['Payment Date', payoutDate.toLocaleString()],
-        ['Status', 'Completed']
-      ];
-      
-      doc.autoTable({
-        startY: 78,
-        head: [['Field', 'Value']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
-        margin: { left: 20, right: 20 }
+      const canvas = await html2canvas(receiptElement, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        logging: false
       });
       
-      const finalY = doc.lastAutoTable.finalY + 10;
-      doc.setFontSize(10);
-      doc.setTextColor(150, 150, 150);
-      doc.text('Thank you for being a Kaizen Mental Wellness partner', 20, finalY);
-      doc.text('This is a system-generated payout receipt', 20, finalY + 7);
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
       
-      doc.save(`payout_receipt_${professional.professionalName.replace(/\s/g, '_')}_${Date.now()}.pdf`);
-      alert('Payout receipt downloaded successfully!');
-    } catch (err) {
-      console.error('PDF generation failed:', err);
-      alert('Failed to generate receipt. Please try again.');
+      const imgWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      pdf.save(`payout_receipt_${receiptModal.professionalName.replace(/\s/g, '_')}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to download receipt. Please try again.');
+    } finally {
+      setDownloadLoading(false);
     }
   };
 
@@ -182,8 +200,8 @@ export default function AdminRevenue() {
       'Professional': p.professionalName,
       'Email': p.professionalEmail,
       'Total Sessions': p.totalSessions || 0,
-      'Total Earned (KSh)': p.totalEarned || 0,
-      'Platform Fee (KSh)': p.platformFees || (p.totalEarned * 0.4) || 0,
+      'Total Earned (KSh)': (p.totalSessions || 0) * 900,
+      'Platform Fee (KSh)': (p.totalSessions || 0) * 600,
       'Pending Payout (KSh)': p.pendingPayout || 0,
       'Paid Out (KSh)': p.paidOut || 0,
       'Split %': p.currentSplitPercentage || 60,
@@ -212,13 +230,12 @@ export default function AdminRevenue() {
       doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
       doc.text(`Total Professionals: ${filteredProfessionals.length}`, 14, 37);
       
-      // Summary section
       if (summary) {
         doc.setFontSize(11);
         doc.setTextColor(0, 0, 0);
-        doc.text(`Platform Revenue: ${formatCurrency(summary.totalPlatformFees)}`, 14, 50);
-        doc.text(`Professional Payouts: ${formatCurrency(summary.totalProfessionalEarnings)}`, 14, 58);
-        doc.text(`Paid Sessions: ${summary.totalPaidSessions}`, 14, 66);
+        doc.text(`Platform Revenue: ${formatCurrency(filteredSummary.totalPlatformFees)}`, 14, 50);
+        doc.text(`Professional Payouts: ${formatCurrency(filteredSummary.totalProfessionalEarnings)}`, 14, 58);
+        doc.text(`Paid Sessions: ${filteredSummary.totalPaidSessions}`, 14, 66);
       }
       
       const startY = summary ? 80 : 50;
@@ -226,8 +243,8 @@ export default function AdminRevenue() {
       const tableData = filteredProfessionals.map(p => [
         p.professionalName,
         p.totalSessions?.toString() || '0',
-        formatCurrency(p.totalEarned || 0),
-        formatCurrency(p.platformFees || 0),
+        formatCurrency((p.totalSessions || 0) * 900),
+        formatCurrency((p.totalSessions || 0) * 600),
         formatCurrency(p.pendingPayout || 0),
         formatCurrency(p.paidOut || 0),
         `${p.currentSplitPercentage || 60}%`
@@ -255,8 +272,8 @@ export default function AdminRevenue() {
 
   // Calculate summary for filtered data
   const filteredSummary = {
-    totalPlatformFees: filteredProfessionals.reduce((sum, p) => sum + (p.platformFees || 0), 0),
-    totalProfessionalEarnings: filteredProfessionals.reduce((sum, p) => sum + (p.totalEarned || 0), 0),
+    totalPlatformFees: filteredProfessionals.reduce((sum, p) => sum + ((p.totalSessions || 0) * 600), 0),
+    totalProfessionalEarnings: filteredProfessionals.reduce((sum, p) => sum + ((p.totalSessions || 0) * 900), 0),
     totalPaidSessions: filteredProfessionals.reduce((sum, p) => sum + (p.totalSessions || 0), 0),
     totalPendingPayout: filteredProfessionals.reduce((sum, p) => sum + (p.pendingPayout || 0), 0),
     totalPaidOut: filteredProfessionals.reduce((sum, p) => sum + (p.paidOut || 0), 0)
@@ -389,8 +406,8 @@ export default function AdminRevenue() {
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{pro.professionalEmail}</div>
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-primary)' }}>{pro.totalSessions || 0}</td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, fontWeight: 500, color: '#4caf50' }}>{formatCurrency(pro.totalEarned)}</td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, color: '#e91e8c' }}>{formatCurrency(pro.platformFees || 0)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, fontWeight: 500, color: '#4caf50' }}>{formatCurrency((pro.totalSessions || 0) * 900)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, color: '#e91e8c' }}>{formatCurrency((pro.totalSessions || 0) * 600)}</td>
                     <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, fontWeight: 500, color: (pro.pendingPayout || 0) > 0 ? '#ff9800' : 'inherit' }}>
                       {formatCurrency(pro.pendingPayout)}
                     </td>
@@ -418,18 +435,18 @@ export default function AdminRevenue() {
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       {(pro.paidOut || 0) > 0 && (
                         <button
-                          onClick={() => generatePayoutReceipt(pro)}
+                          onClick={() => openReceiptModal(pro)}
                           style={{
                             padding: '4px 8px',
                             fontSize: 11,
                             borderRadius: 6,
                             border: 'none',
-                            background: '#9c27b0',
+                            background: 'linear-gradient(135deg, #e91e8c, #9c27b0)',
                             color: 'white',
                             cursor: 'pointer'
                           }}
                         >
-                          📄 Receipt
+                          🧾 View Receipt
                         </button>
                       )}
                     </td>
@@ -445,10 +462,100 @@ export default function AdminRevenue() {
         Showing {filteredProfessionals.length} of {professionals.length} professionals
       </div>
 
+      {/* Receipt Modal */}
+      {receiptModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={() => setReceiptModal(null)}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 18, maxWidth: 460, width: '100%', border: `1.5px solid ${PINK}`, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div id="receipt-content" style={{ padding: 32, overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div>
+                  <h3 style={{ fontSize: 20, fontWeight: 700, color: PURPLE, margin: 0 }}>🧾 Payout Receipt</h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>Professional Payment Confirmation</p>
+                </div>
+              </div>
+
+              <div style={{ background: `linear-gradient(135deg, ${PINK_LIGHT}, ${PURPLE_LIGHT})`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>🧾</div>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: PURPLE, margin: 0 }}>Kaizen Mental Health Platform</p>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '4px 0 0' }}>Official Payout Receipt</p>
+                </div>
+
+                <div style={{ height: 1, background: `linear-gradient(90deg, ${PINK}, ${PURPLE})`, marginBottom: 16 }} />
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Receipt Number</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>PAY-{receiptModal.professionalId}-{Date.now()}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Transaction Date</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>
+                    {new Date().toLocaleString('en-KE', {
+                      year: 'numeric', month: 'long', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Professional</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: PURPLE, margin: '4px 0 0' }}>{receiptModal.professionalName}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Email</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.professionalEmail}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Payment Method</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.paymentMethod || 'Manual Transfer'}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Payment Account</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.paymentAccount || 'N/A'}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Total Sessions</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{receiptModal.totalSessions || 0}</p>
+                </div>
+
+                <div style={{ background: 'var(--bg-hover)', borderRadius: 8, padding: '12px 16px', marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Total Amount Paid</p>
+                    <p style={{ fontSize: 20, fontWeight: 700, color: PINK, margin: 0 }}>KSh {(receiptModal.paidOut || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: 0 }}>
+                  Thank you for being a Kaizen Mental Wellness partner
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                  This is a system-generated payout receipt
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '0 32px 32px 32px', borderTop: '1px solid var(--border)', paddingTop: 24 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setReceiptModal(null)} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: 'transparent', color: PINK, border: `1.5px solid ${PINK}`, borderRadius: 10, cursor: 'pointer' }}>Close</button>
+                <button onClick={() => window.print()} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: `linear-gradient(135deg, ${PINK}, ${PURPLE})`, color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer' }}>🖨️ Print</button>
+                <button onClick={downloadReceiptAsPDF} disabled={downloadLoading} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: downloadLoading ? 'var(--border)' : `linear-gradient(135deg, ${PINK}, ${PURPLE})`, color: 'white', border: 'none', borderRadius: 10, cursor: downloadLoading ? 'not-allowed' : 'pointer', opacity: downloadLoading ? 0.6 : 1 }}>{downloadLoading ? 'Downloading...' : '📥 Download PDF'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Split Modal */}
       {showSplitModal && selectedPro && (
-        <div className="modal-overlay">
-          <div className="modal-content">
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
+          <div className="modal-content" style={{ background: 'var(--bg-card)', borderRadius: 20, padding: 28, maxWidth: 450, width: '90%' }}>
             <h3 style={{ fontSize: 18, marginBottom: 8, color: 'var(--text-primary)' }}>Edit Professional Split</h3>
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
               {selectedPro.professionalName} — Current split: {selectedPro.currentSplitPercentage}%
@@ -465,7 +572,7 @@ export default function AdminRevenue() {
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
               />
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                Platform will receive {100 - (parseInt(splitPercentage) || 60)}%
+                Platform will receive {100 - (parseInt(splitPercentage, 10) || 60)}%
               </p>
             </div>
             

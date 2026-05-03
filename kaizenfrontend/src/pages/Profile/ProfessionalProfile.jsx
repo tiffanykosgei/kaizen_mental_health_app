@@ -7,6 +7,7 @@ export default function ProfessionalProfile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success] = useState('');
+  const [profilePicturePreview, setProfilePicturePreview] = useState('');
   const [user, setUser] = useState({
     firstName: '',
     lastName: '',
@@ -23,11 +24,7 @@ export default function ProfessionalProfile() {
     education: '',
     certifications: '',
     licenseNumber: '',
-    professionalLinks: {
-      linkedin: '',
-      website: '',
-      portfolio: ''
-    }
+    externalProfileUrl: ''
   });
   
   // Delete account states
@@ -58,6 +55,13 @@ export default function ProfessionalProfile() {
         role: userData.role || '',
         dateRegistered: userData.dateRegistered || ''
       });
+
+      if (userData.profilePicture) {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        setProfilePicturePreview(`${baseUrl}${userData.profilePicture}`);
+      } else {
+        setProfilePicturePreview('');
+      }
       
       if (userData.professionalProfile) {
         const prof = userData.professionalProfile;
@@ -68,11 +72,7 @@ export default function ProfessionalProfile() {
           education: prof.education || '',
           certifications: prof.certifications || '',
           licenseNumber: prof.licenseNumber || '',
-          professionalLinks: {
-            linkedin: prof.professionalLinks?.linkedin || '',
-            website: prof.professionalLinks?.website || '',
-            portfolio: prof.professionalLinks?.portfolio || ''
-          }
+          externalProfileUrl: prof.externalProfileUrl || ''
         });
       }
     } catch (err) {
@@ -111,6 +111,11 @@ export default function ProfessionalProfile() {
     } catch {
       return 'Invalid date';
     }
+  };
+
+  const ensureHttp = (url) => {
+    if (!url) return '#';
+    return url.startsWith('http') ? url : `https://${url}`;
   };
 
   if (loading) {
@@ -242,9 +247,14 @@ export default function ProfessionalProfile() {
             justifyContent: 'center',
             fontSize: 42,
             fontWeight: 600,
-            color: 'white'
+            color: 'white',
+            overflow: 'hidden',
+            flexShrink: 0
           }}>
-            {user.firstName?.charAt(0).toUpperCase()}{user.lastName?.charAt(0).toUpperCase()}
+            {profilePicturePreview
+              ? <img src={profilePicturePreview} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <span>{user.firstName?.charAt(0).toUpperCase()}{user.lastName?.charAt(0).toUpperCase()}</span>
+            }
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -283,7 +293,7 @@ export default function ProfessionalProfile() {
         </div>
       </div>
 
-      {/* Professional Information Card */}
+      {/* Professional Information Card - UNIFIED VIEW with ALL professional information */}
       <div style={{
         background: 'var(--bg-card)',
         borderRadius: 20,
@@ -296,6 +306,7 @@ export default function ProfessionalProfile() {
           Professional Information
         </h3>
         
+        {/* License/Certification Number */}
         {professionalProfile.licenseNumber && (
           <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
@@ -307,6 +318,7 @@ export default function ProfessionalProfile() {
           </div>
         )}
         
+        {/* Specialization */}
         {professionalProfile.specialization && (
           <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
@@ -318,6 +330,7 @@ export default function ProfessionalProfile() {
           </div>
         )}
         
+        {/* Years of Experience */}
         {professionalProfile.yearsOfExperience && (
           <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
@@ -329,6 +342,7 @@ export default function ProfessionalProfile() {
           </div>
         )}
         
+        {/* Bio */}
         {professionalProfile.bio && (
           <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
@@ -340,6 +354,7 @@ export default function ProfessionalProfile() {
           </div>
         )}
         
+        {/* Education & Qualifications */}
         {professionalProfile.education && (
           <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
@@ -351,6 +366,7 @@ export default function ProfessionalProfile() {
           </div>
         )}
         
+        {/* Certifications & Awards */}
         {professionalProfile.certifications && (
           <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
@@ -362,33 +378,39 @@ export default function ProfessionalProfile() {
           </div>
         )}
         
-        {/* Professional Links */}
-        {(professionalProfile.professionalLinks?.linkedin || 
-          professionalProfile.professionalLinks?.website || 
-          professionalProfile.professionalLinks?.portfolio) && (
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12 }}>
-              Professional Links
+        {/* External Professional Profile Link */}
+        {professionalProfile.externalProfileUrl && (
+          <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              External Professional Profile
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {professionalProfile.professionalLinks?.linkedin && (
-                <a href={professionalProfile.professionalLinks.linkedin} target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#e91e8c', textDecoration: 'none', fontSize: 14 }}>
-                  🔗 LinkedIn Profile
-                </a>
-              )}
-              {professionalProfile.professionalLinks?.website && (
-                <a href={professionalProfile.professionalLinks.website} target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#e91e8c', textDecoration: 'none', fontSize: 14 }}>
-                  🌐 Professional Website
-                </a>
-              )}
-              {professionalProfile.professionalLinks?.portfolio && (
-                <a href={professionalProfile.professionalLinks.portfolio} target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#e91e8c', textDecoration: 'none', fontSize: 14 }}>
-                  📁 Credentials/Reviews Portal
-                </a>
-              )}
+            <div style={{ marginTop: 8 }}>
+              <a 
+                href={ensureHttp(professionalProfile.externalProfileUrl)} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 16px',
+                  background: 'linear-gradient(135deg, #e91e8c, #9c27b0)',
+                  color: 'white',
+                  textDecoration: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.85'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                🌐 View Full Professional Profile
+                <span style={{ fontSize: 12 }}>↗</span>
+              </a>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                This link leads to an external site where clients can verify your credentials.
+              </p>
             </div>
           </div>
         )}
@@ -400,16 +422,14 @@ export default function ProfessionalProfile() {
          !professionalProfile.bio && 
          !professionalProfile.education && 
          !professionalProfile.certifications &&
-         !professionalProfile.professionalLinks?.linkedin &&
-         !professionalProfile.professionalLinks?.website &&
-         !professionalProfile.professionalLinks?.portfolio && (
+         !professionalProfile.externalProfileUrl && (
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
             <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
               No professional information added yet.
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 8 }}>
-              Click "Edit in Settings" to add your professional credentials, bio, and links.
+              Click "Edit in Settings" to add your professional credentials, bio, and external profile link.
             </p>
           </div>
         )}

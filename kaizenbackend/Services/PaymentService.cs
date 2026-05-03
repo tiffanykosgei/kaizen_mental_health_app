@@ -72,7 +72,7 @@ namespace kaizenbackend.Services
                     Password = password,
                     Timestamp = timestamp,
                     TransactionType = "CustomerPayBillOnline",
-                    Amount = (int)amount,
+                    Amount = Math.Ceiling(amount),
                     PartyA = formattedPhone,
                     PartyB = shortCode,
                     PhoneNumber = formattedPhone,
@@ -92,21 +92,66 @@ namespace kaizenbackend.Services
                 );
                 
                 var response = await _httpClient.PostAsync(apiUrl, content);
-                
                 var responseJson = await response.Content.ReadAsStringAsync();
                 Console.WriteLine($"STK Push Response: {responseJson}");
                 
                 using var doc = JsonDocument.Parse(responseJson);
                 var root = doc.RootElement;
                 
-                var resultCode = root.GetProperty("ResponseCode").GetString();
+                // SAFELY check for ResponseCode - handle missing keys
+                string resultCode = null;
+                if (root.TryGetProperty("ResponseCode", out var responseCodeElement))
+                {
+                    resultCode = responseCodeElement.GetString();
+                }
+                else if (root.TryGetProperty("errorCode", out var errorCodeElement))
+                {
+                    resultCode = errorCodeElement.GetString();
+                }
+                else if (root.TryGetProperty("errorMessage", out var errorMessage))
+                {
+                    // This is an error response
+                    return new StkPushResponse
+                    {
+                        Success = false,
+                        ResponseDescription = errorMessage.GetString() ?? "Unknown M-Pesa error"
+                    };
+                }
+                
+                // Safely get other properties
+                string merchantRequestId = root.TryGetProperty("MerchantRequestID", out var merchantId) ? merchantId.GetString() : null;
+                string checkoutRequestId = root.TryGetProperty("CheckoutRequestID", out var checkoutId) ? checkoutId.GetString() : null;
+                string responseDescription = root.TryGetProperty("ResponseDescription", out var desc) ? desc.GetString() : responseJson;
+                string errorMessageText = root.TryGetProperty("errorMessage", out var errorMsg) ? errorMsg.GetString() : null;
+                
+                // Check if this is a successful response
+                bool isSuccess = resultCode == "0";
+                
+                // If there's an error message, use it
+                if (!string.IsNullOrEmpty(errorMessageText))
+                {
+                    return new StkPushResponse
+                    {
+                        Success = false,
+                        ResponseDescription = errorMessageText
+                    };
+                }
                 
                 return new StkPushResponse
                 {
-                    Success = resultCode == "0",
-                    MerchantRequestId = root.TryGetProperty("MerchantRequestID", out var merchantId) ? merchantId.GetString() : null,
-                    CheckoutRequestId = root.TryGetProperty("CheckoutRequestID", out var checkoutId) ? checkoutId.GetString() : null,
-                    ResponseDescription = root.TryGetProperty("ResponseDescription", out var desc) ? desc.GetString() : responseJson
+                    Success = isSuccess,
+                    MerchantRequestId = merchantRequestId,
+                    CheckoutRequestId = checkoutRequestId,
+                    ResponseDescription = responseDescription ?? (isSuccess ? "Success" : "Failed")
+                };
+            }
+            catch (JsonException jsonEx)
+            {
+                Console.WriteLine($"JSON Parsing Error in InitiatePayment: {jsonEx.Message}");
+                return new StkPushResponse
+                {
+                    Success = false,
+                    ResponseDescription = $"Invalid response from M-Pesa: {jsonEx.Message}"
                 };
             }
             catch (Exception ex)
@@ -183,8 +228,9 @@ namespace kaizenbackend.Services
                 using var doc = JsonDocument.Parse(responseJson);
                 var root = doc.RootElement;
                 
-                var resultCode = root.TryGetProperty("ResultCode", out var rc) ? rc.GetInt32() : 1;
-                var resultDesc = root.TryGetProperty("ResultDesc", out var rd) ? rd.GetString() : "Unknown error";
+                // Safely extract values
+                int resultCode = root.TryGetProperty("ResultCode", out var rc) ? rc.GetInt32() : 1;
+                string resultDesc = root.TryGetProperty("ResultDesc", out var rd) ? rd.GetString() : "Unknown error";
                 
                 var statusResponse = new PaymentStatusResponse
                 {
@@ -260,7 +306,18 @@ namespace kaizenbackend.Services
                 using var doc = JsonDocument.Parse(responseJson);
                 var root = doc.RootElement;
                 
-                return root.GetProperty("access_token").GetString() ?? "";
+                // Safely get access_token
+                if (root.TryGetProperty("access_token", out var tokenElement))
+                {
+                    return tokenElement.GetString() ?? "";
+                }
+                else if (root.TryGetProperty("errorMessage", out var errorElement))
+                {
+                    Console.WriteLine($"Token Error: {errorElement.GetString()}");
+                    return "";
+                }
+                
+                return "";
             }
             catch (Exception ex)
             {

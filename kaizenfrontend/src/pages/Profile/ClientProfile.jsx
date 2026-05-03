@@ -6,6 +6,7 @@ export default function ClientProfile() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [profilePicturePreview, setProfilePicturePreview] = useState('');
   const [user, setUser] = useState({
     firstName: '',
     lastName: '',
@@ -14,9 +15,17 @@ export default function ClientProfile() {
     role: '',
     dateRegistered: ''
   });
+  
+  // Delete account states
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [isGoogleUser, setIsGoogleUser] = useState(false);
 
   useEffect(() => {
     fetchProfile();
+    const isGoogle = localStorage.getItem('isGoogleUser') === 'true';
+    setIsGoogleUser(isGoogle);
   }, []);
 
   const fetchProfile = async () => {
@@ -25,11 +34,34 @@ export default function ClientProfile() {
       const userRes = await API.get('/auth/profile');
       const userData = userRes.data;
       setUser(userData);
+
+      if (userData.profilePicture) {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        setProfilePicturePreview(`${baseUrl}${userData.profilePicture}`);
+      } else {
+        setProfilePicturePreview('');
+      }
     } catch (err) {
       console.error(err);
       setError('Could not load profile information.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setError('');
+    
+    try {
+      const payload = isGoogleUser ? {} : { password: deletePassword };
+      await API.delete('/auth/account', { data: payload });
+      
+      localStorage.clear();
+      navigate('/', { state: { message: 'Your account has been deleted successfully.' } });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete account');
+      setDeleting(false);
     }
   };
 
@@ -158,9 +190,14 @@ export default function ClientProfile() {
             justifyContent: 'center',
             fontSize: 42,
             fontWeight: 600,
-            color: 'white'
+            color: 'white',
+            overflow: 'hidden',
+            flexShrink: 0
           }}>
-            {user.firstName?.charAt(0).toUpperCase()}{user.lastName?.charAt(0).toUpperCase()}
+            {profilePicturePreview
+              ? <img src={profilePicturePreview} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <span>{user.firstName?.charAt(0).toUpperCase()}{user.lastName?.charAt(0).toUpperCase()}</span>
+            }
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -193,6 +230,144 @@ export default function ClientProfile() {
           </div>
         </div>
       </div>
+
+      {/* Delete Account Section */}
+      {!showDeleteConfirm ? (
+        <div style={{
+          background: 'linear-gradient(135deg, #FEF2F2, #FEE2E2)',
+          borderRadius: 16,
+          border: '1px solid #FECACA',
+          padding: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 16
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 28 }}>⚠️</div>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: '#991B1B' }}>
+                Delete Account
+              </h3>
+              <p style={{ fontSize: 12, color: '#7F1D1D', margin: '4px 0 0' }}>
+                Permanently delete your account and all associated data.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            style={{
+              padding: '8px 20px',
+              background: '#DC2626',
+              color: 'white',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Delete My Account
+          </button>
+        </div>
+      ) : (
+        <div style={{
+          background: 'linear-gradient(135deg, #FEF2F2, #FEE2E2)',
+          borderRadius: 16,
+          border: '1px solid #FECACA',
+          padding: 20
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <div style={{ fontSize: 24 }}>⚠️</div>
+            <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: '#991B1B' }}>
+              Confirm Account Deletion
+            </h3>
+          </div>
+          <p style={{ fontSize: 13, color: '#7F1D1D', marginBottom: 16, lineHeight: 1.5 }}>
+            Are you sure you want to permanently delete your account? All your data will be lost forever.
+          </p>
+          
+          {!isGoogleUser && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#991B1B', marginBottom: 6 }}>
+                Enter your password to confirm
+              </label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="Your password"
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  border: '1.5px solid #FECACA',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  background: 'white',
+                  color: '#1a202c'
+                }}
+              />
+            </div>
+          )}
+          
+          {isGoogleUser && (
+            <div style={{
+              background: '#FEF3C7',
+              padding: '10px 14px',
+              borderRadius: 8,
+              marginBottom: 16,
+              fontSize: 12,
+              color: '#92400E'
+            }}>
+              ⚠️ You signed up with Google. You don't need a password to delete your account.
+            </div>
+          )}
+          
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              onClick={handleDeleteAccount}
+              disabled={deleting}
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: '#DC2626',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: deleting ? 'not-allowed' : 'pointer',
+                opacity: deleting ? 0.6 : 1
+              }}
+            >
+              {deleting ? 'Deleting...' : 'Yes, Delete My Account'}
+            </button>
+            <button
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setDeletePassword('');
+                setError('');
+              }}
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: 'transparent',
+                color: '#6B7280',
+                border: '1.5px solid #D1D5DB',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes spin {

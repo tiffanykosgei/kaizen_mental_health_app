@@ -7,86 +7,76 @@ import API from '../../api/axios';
 export default function RegisterProfessional() {
   const navigate = useNavigate();
   const { dark, toggle } = useTheme();
-  
-  // Flow state
-  const [step, setStep] = useState(1); // 1: choose method, 2: email verification, 3: complete profile
-  const [email, setEmail] = useState('');
+
+  const [step,             setStep]             = useState(1);
+  const [email,            setEmail]            = useState('');
   const [verificationCode, setVerificationCode] = useState('');
-  const [isCodeSent, setIsCodeSent] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  
-  // Profile data
+  const [isCodeSent,       setIsCodeSent]       = useState(false);
+  const [countdown,        setCountdown]        = useState(0);
+
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', email: '',
     password: '', confirmPassword: '',
     role: 'Professional', phoneNumber: '',
     bio: '', specialization: '',
-    // New fields for professional portfolio
     yearsOfExperience: '',
     education: '',
     certifications: '',
-    professionalLinks: {
-      linkedin: '',
-      website: '',
-      portfolio: ''
-    },
-    languages: [],
-    profileImage: null,
-    licenseNumber: ''
+    licenseNumber: '',
+    externalProfileUrl: ''
   });
-  
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+
+  const [errors,              setErrors]              = useState({});
+  const [loading,             setLoading]             = useState(false);
+  const [showPassword,        setShowPassword]        = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [newLanguage, setNewLanguage] = useState('');
 
   const config = { icon: '👩‍⚕️', color: '#9c27b0', label: 'Professional' };
 
+  const isValidUrl = (url) => {
+    if (!url) return true; // empty is ok — field is optional
+    try {
+      const u = url.startsWith('http') ? url : `https://${url}`;
+      new URL(u);
+      return true;
+    } catch { return false; }
+  };
+
   const validatePassword = (pwd) => ({
-    length: pwd.length >= 8,
+    length:    pwd.length >= 8,
     uppercase: /[A-Z]/.test(pwd),
     lowercase: /[a-z]/.test(pwd),
-    special: /[!@#$%^&*(),.?":{}|<>]/.test(pwd)
+    special:   /[!@#$%^&*(),.?":{}|<>]/.test(pwd)
   });
 
-  const pwdChecks = validatePassword(formData.password);
-  const pwdScore = Object.values(pwdChecks).filter(Boolean).length;
+  const pwdChecks  = validatePassword(formData.password);
+  const pwdScore   = Object.values(pwdChecks).filter(Boolean).length;
   const pwdStrength = [
     null,
-    { text: 'Weak', color: '#e53e3e', width: '25%' },
-    { text: 'Fair', color: '#ed8936', width: '50%' },
-    { text: 'Good', color: '#ecc94b', width: '75%' },
+    { text: 'Weak',   color: '#e53e3e', width: '25%'  },
+    { text: 'Fair',   color: '#ed8936', width: '50%'  },
+    { text: 'Good',   color: '#ecc94b', width: '75%'  },
     { text: 'Strong', color: '#48bb78', width: '100%' }
   ][pwdScore];
 
-  // Send verification code
   const handleSendCode = async (e) => {
     e.preventDefault();
-    
     if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) {
       setErrors({ email: 'Please enter a valid email address.' });
       return;
     }
-    
     setLoading(true);
     setErrors({});
-    
     try {
       await API.post('/auth/send-verification', { email });
       setIsCodeSent(true);
       setCountdown(60);
-      
       const timer = setInterval(() => {
         setCountdown(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
+          if (prev <= 1) { clearInterval(timer); return 0; }
           return prev - 1;
         });
       }, 1000);
-      
     } catch (err) {
       setErrors({ submit: err.response?.data?.message || 'Failed to send verification code.' });
     } finally {
@@ -94,18 +84,14 @@ export default function RegisterProfessional() {
     }
   };
 
-  // Verify code
   const handleVerifyCode = async (e) => {
     e.preventDefault();
-    
     if (!verificationCode || verificationCode.length !== 6) {
       setErrors({ code: 'Please enter the 6-digit verification code.' });
       return;
     }
-    
     setLoading(true);
     setErrors({});
-    
     try {
       await API.post('/auth/verify-code', { email, code: verificationCode });
       setFormData(prev => ({ ...prev, email }));
@@ -117,7 +103,6 @@ export default function RegisterProfessional() {
     }
   };
 
-  // Google sign-up
   const handleGoogleSuccess = async (credentialResponse) => {
     setErrors({});
     setLoading(true);
@@ -127,19 +112,18 @@ export default function RegisterProfessional() {
         role: 'Professional'
       });
       const data = response.data;
-      
       if (data.requiresPassword) {
-        localStorage.setItem('googleEmail', data.email);
+        localStorage.setItem('googleEmail',     data.email);
         localStorage.setItem('googleFirstName', data.firstName);
-        localStorage.setItem('googleLastName', data.lastName);
-        localStorage.setItem('googleRole', 'Professional');
+        localStorage.setItem('googleLastName',  data.lastName);
+        localStorage.setItem('googleRole',      'Professional');
         navigate('/complete-profile');
       } else {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('role', data.role);
-        localStorage.setItem('fullName', data.fullName);
+        localStorage.setItem('token',     data.token);
+        localStorage.setItem('role',      data.role);
+        localStorage.setItem('fullName',  data.fullName);
         localStorage.setItem('firstName', data.firstName);
-        localStorage.setItem('lastName', data.lastName);
+        localStorage.setItem('lastName',  data.lastName);
         navigate('/dashboard');
       }
     } catch (err) {
@@ -149,76 +133,62 @@ export default function RegisterProfessional() {
     }
   };
 
-  // Add language
-  const addLanguage = () => {
-    if (newLanguage.trim() && !formData.languages.includes(newLanguage.trim())) {
-      setFormData(prev => ({
-        ...prev,
-        languages: [...prev.languages, newLanguage.trim()]
-      }));
-      setNewLanguage('');
-    }
-  };
-
-  // Remove language
-  const removeLanguage = (lang) => {
-    setFormData(prev => ({
-      ...prev,
-      languages: prev.languages.filter(l => l !== lang)
-    }));
-  };
-
-  // Handle professional links
-  const handleLinkChange = (type, value) => {
-    setFormData(prev => ({
-      ...prev,
-      professionalLinks: {
-        ...prev.professionalLinks,
-        [type]: value
-      }
-    }));
-  };
-
-  // Complete registration
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
-    
+
     const eObj = {};
-    if (!formData.firstName.trim()) eObj.firstName = 'First name is required';
-    if (!formData.lastName.trim()) eObj.lastName = 'Last name is required';
-    if (!formData.password) eObj.password = 'Password is required';
-    else if (formData.password.length < 8) eObj.password = 'Password must be at least 8 characters';
-    else if (!pwdChecks.uppercase) eObj.password = 'Password must include an uppercase letter';
-    else if (!pwdChecks.lowercase) eObj.password = 'Password must include a lowercase letter';
-    else if (!pwdChecks.special) eObj.password = 'Password must include a special character';
-    if (formData.password !== formData.confirmPassword) eObj.confirmPassword = 'Passwords do not match';
-    if (!formData.specialization) eObj.specialization = 'Specialization is required';
-    if (!formData.bio) eObj.bio = 'Bio is required';
-    if (!formData.yearsOfExperience) eObj.yearsOfExperience = 'Years of experience is required';
-    if (!formData.licenseNumber) eObj.licenseNumber = 'License/Certification number is required';
-    
+
+    // Personal
+    if (!formData.firstName.trim())  eObj.firstName = 'First name is required.';
+    if (!formData.lastName.trim())   eObj.lastName  = 'Last name is required.';
+    if (!formData.phoneNumber.trim()) eObj.phoneNumber = 'Phone number is required.';
+
+    // Password
+    if (!formData.password)                eObj.password = 'Password is required.';
+    else if (formData.password.length < 8) eObj.password = 'Password must be at least 8 characters.';
+    else if (!pwdChecks.uppercase)         eObj.password = 'Password must include an uppercase letter.';
+    else if (!pwdChecks.lowercase)         eObj.password = 'Password must include a lowercase letter.';
+    else if (!pwdChecks.special)           eObj.password = 'Password must include a special character.';
+    if (formData.password !== formData.confirmPassword)
+      eObj.confirmPassword = 'Passwords do not match.';
+
+    // Professional required fields
+    if (!formData.licenseNumber.trim())    eObj.licenseNumber    = 'License/Certification number is required.';
+    if (!formData.specialization)          eObj.specialization   = 'Specialization is required.';
+    if (!formData.yearsOfExperience)       eObj.yearsOfExperience = 'Years of experience is required.';
+    if (!formData.bio.trim())              eObj.bio              = 'Bio is required.';
+    if (!formData.education.trim())        eObj.education        = 'Education & Qualifications is required.';
+
+    // URL is optional but must be valid if provided
+    if (formData.externalProfileUrl && !isValidUrl(formData.externalProfileUrl))
+      eObj.externalProfileUrl = 'Please enter a valid URL (e.g. https://linkedin.com/in/yourprofile).';
+
     if (Object.keys(eObj).length > 0) {
       setErrors(eObj);
+      // Scroll to first error
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    
+
     setLoading(true);
     setErrors({});
-    
+
     try {
-      const payload = { ...formData, isGoogleUser: false };
+      const payload  = { ...formData, isGoogleUser: false };
       const response = await API.post('/auth/complete-registration', payload);
-      const data = response.data;
-      
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('role', data.role);
-      localStorage.setItem('fullName', data.fullName);
+      const data     = response.data;
+
+      localStorage.setItem('token',     data.token);
+      localStorage.setItem('role',      data.role);
+      localStorage.setItem('fullName',  data.fullName);
       localStorage.setItem('firstName', data.firstName);
-      localStorage.setItem('lastName', data.lastName);
-      
+      localStorage.setItem('lastName',  data.lastName);
+
       navigate('/dashboard');
     } catch (err) {
-      setErrors({ submit: err.response?.data?.message || 'Registration failed.' });
+      const msg = err.response?.data?.message || 'Registration failed.';
+      setErrors({ submit: msg });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setLoading(false);
     }
@@ -230,6 +200,7 @@ export default function RegisterProfessional() {
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
   };
 
+  // ── shared styles ──────────────────────────────────────────────────────────
   const inputStyle = (hasError) => ({
     width: '100%', padding: '13px 16px',
     border: `1.5px solid ${hasError ? '#e53e3e' : 'var(--border)'}`,
@@ -243,6 +214,12 @@ export default function RegisterProfessional() {
     color: 'var(--text-secondary)', marginBottom: 6
   };
 
+  const errText = (key) => errors[key]
+    ? <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors[key]}</p>
+    : null;
+
+  const requiredMark = <span style={{ color: '#e53e3e', marginLeft: 2 }}>*</span>;
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
       <div style={{ position: 'absolute', top: 20, right: 24 }}>
@@ -252,18 +229,14 @@ export default function RegisterProfessional() {
       </div>
 
       <div style={{ width: '100%', maxWidth: 700, background: 'var(--bg-card)', borderRadius: 20, border: '1.5px solid var(--border)', padding: '40px 36px', boxShadow: 'var(--shadow)', maxHeight: '90vh', overflowY: 'auto' }}>
-        
+
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{ fontSize: 48, marginBottom: 10 }}>{config.icon}</div>
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: config.color, margin: 0 }}>
-            Professional Registration
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>
-            Join as a Professional to help others
-          </p>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: config.color, margin: 0 }}>Professional Registration</h2>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>Join as a Professional to help others</p>
         </div>
 
-        {/* Step 1: Choose sign-up method */}
+        {/* ── Step 1: Choose method ── */}
         {step === 1 && (
           <>
             <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
@@ -283,53 +256,36 @@ export default function RegisterProfessional() {
               <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             </div>
 
-            <button
-              onClick={() => setStep(2)}
-              style={{
-                width: '100%', padding: '14px', fontSize: 15, fontWeight: 600,
-                background: 'transparent', color: config.color,
-                border: `2px solid ${config.color}`, borderRadius: 10,
-                cursor: 'pointer', transition: 'all 0.2s'
-              }}
-            >
+            <button onClick={() => setStep(2)}
+              style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: 'transparent', color: config.color, border: `2px solid ${config.color}`, borderRadius: 10, cursor: 'pointer' }}>
               Sign up with Email
             </button>
 
             <div style={{ textAlign: 'center', marginTop: 24, fontSize: 13, color: 'var(--text-muted)' }}>
               Already have an account?{' '}
-              <Link to="/login/professional" style={{ color: config.color, fontWeight: 500 }}>
-                Sign In
-              </Link>
+              <Link to="/login/professional" style={{ color: config.color, fontWeight: 500 }}>Sign In</Link>
             </div>
           </>
         )}
 
-        {/* Step 2A: Enter Email (before code is sent) */}
+        {/* ── Step 2A: Enter email ── */}
         {step === 2 && !isCodeSent && (
           <form onSubmit={handleSendCode}>
             <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>Email Address</label>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
+              <label style={labelStyle}>Email Address{requiredMark}</label>
+              <input type="email" placeholder="you@gmail.com" value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                style={inputStyle(errors.email)}
-                required
-                autoFocus
-              />
-              {errors.email && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.email}</p>}
+                style={inputStyle(errors.email)} required autoFocus />
+              {errText('email')}
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
                 We'll send a 6-digit verification code to this email
               </p>
             </div>
-
             {errors.submit && (
               <div style={{ background: '#FCEBEB', color: '#791F1F', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
                 {errors.submit}
               </div>
             )}
-
             <button type="submit" disabled={loading}
               style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: config.color, color: 'white', border: 'none', borderRadius: 10, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
               {loading ? 'Sending...' : 'Send Verification Code'}
@@ -337,51 +293,26 @@ export default function RegisterProfessional() {
           </form>
         )}
 
-        {/* Step 2B: Enter Verification Code (after code is sent) */}
+        {/* ── Step 2B: Enter code ── */}
         {step === 2 && isCodeSent && (
           <form onSubmit={handleVerifyCode}>
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Verification Code</label>
-              <input
-                type="text"
-                placeholder="Enter 6-digit code"
-                value={verificationCode}
+              <label style={labelStyle}>Verification Code{requiredMark}</label>
+              <input type="text" placeholder="Enter 6-digit code" value={verificationCode}
                 onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                style={inputStyle(errors.code)}
-                maxLength={6}
-                required
-                autoFocus
-              />
-              {errors.code && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.code}</p>}
-              
+                style={inputStyle(errors.code)} maxLength={6} required autoFocus />
+              {errText('code')}
               <div style={{ marginTop: 12 }}>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Code sent to: <strong>{email}</strong>
-                </p>
-                {countdown > 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Resend available in {countdown} seconds
-                  </p>
-                ) : (
-                  <button 
-                    type="button" 
-                    onClick={handleSendCode} 
-                    style={{ 
-                      background: 'none', 
-                      border: 'none', 
-                      color: config.color, 
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      textDecoration: 'underline'
-                    }}
-                  >
-                    Resend Code
-                  </button>
-                )}
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Code sent to: <strong>{email}</strong></p>
+                {countdown > 0
+                  ? <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Resend in {countdown}s</p>
+                  : <button type="button" onClick={handleSendCode}
+                      style={{ background: 'none', border: 'none', color: config.color, cursor: 'pointer', fontSize: 13, fontWeight: 500, textDecoration: 'underline' }}>
+                      Resend Code
+                    </button>
+                }
               </div>
             </div>
-
             <button type="submit" disabled={loading}
               style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: config.color, color: 'white', border: 'none', borderRadius: 10, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
               {loading ? 'Verifying...' : 'Verify Email & Continue'}
@@ -389,105 +320,76 @@ export default function RegisterProfessional() {
           </form>
         )}
 
-        {/* Step 3: Complete Profile */}
+        {/* ── Step 3: Complete Profile ── */}
         {step === 3 && (
           <form onSubmit={handleCompleteRegistration}>
+
             {errors.submit && (
               <div style={{ background: '#FCEBEB', color: '#791F1F', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
                 {errors.submit}
               </div>
             )}
 
-            <div style={{ 
-              background: 'rgba(156,39,176,0.1)', 
-              padding: '10px 14px', 
-              borderRadius: 8, 
-              marginBottom: 20,
-              fontSize: 13,
-              color: config.color,
-              border: `1px solid ${config.color}`
-            }}>
+            <div style={{ background: 'rgba(156,39,176,0.1)', padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13, color: config.color, border: `1px solid ${config.color}` }}>
               ✓ Email verified: <strong>{formData.email}</strong>
             </div>
 
-            {/* Basic Information */}
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16, marginTop: 8 }}>
-              Basic Information
+            {/* ── Personal Information ── */}
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>
+              Personal Information
             </h3>
-            
+
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
-                <label style={labelStyle}>First Name *</label>
-                <input 
-                  name="firstName" 
-                  placeholder="First name" 
-                  value={formData.firstName} 
-                  onChange={handleChange} 
-                  style={inputStyle(errors.firstName)} 
-                />
-                {errors.firstName && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.firstName}</p>}
+                <label style={labelStyle}>First Name{requiredMark}</label>
+                <input name="firstName" placeholder="First name" value={formData.firstName}
+                  onChange={handleChange} style={inputStyle(errors.firstName)} />
+                {errText('firstName')}
               </div>
               <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Last Name *</label>
-                <input 
-                  name="lastName" 
-                  placeholder="Last name" 
-                  value={formData.lastName} 
-                  onChange={handleChange} 
-                  style={inputStyle(errors.lastName)} 
-                />
-                {errors.lastName && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.lastName}</p>}
+                <label style={labelStyle}>Last Name{requiredMark}</label>
+                <input name="lastName" placeholder="Last name" value={formData.lastName}
+                  onChange={handleChange} style={inputStyle(errors.lastName)} />
+                {errText('lastName')}
               </div>
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Phone Number</label>
-              <input 
-                name="phoneNumber" 
-                placeholder="e.g., 0712345678" 
-                value={formData.phoneNumber} 
-                onChange={handleChange} 
-                style={inputStyle(false)} 
-              />
+              <label style={labelStyle}>Phone Number{requiredMark}</label>
+              <input name="phoneNumber" placeholder="e.g., 0712345678" value={formData.phoneNumber}
+                onChange={handleChange} style={inputStyle(errors.phoneNumber)} />
+              {errText('phoneNumber')}
             </div>
 
-            {/* Professional Information */}
+            {/* ── Professional Information ── */}
             <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16, marginTop: 24 }}>
               Professional Information
             </h3>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Specialization *</label>
-              <input 
-                name="specialization" 
-                placeholder="e.g., Cognitive Behavioural Therapy, Clinical Psychology" 
-                value={formData.specialization} 
-                onChange={handleChange} 
-                style={inputStyle(errors.specialization)} 
-              />
-              {errors.specialization && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.specialization}</p>}
+              <label style={labelStyle}>License/Certification Number{requiredMark}</label>
+              <input name="licenseNumber" placeholder="e.g., KMPDC-2024-12345" value={formData.licenseNumber}
+                onChange={handleChange} style={inputStyle(errors.licenseNumber)} />
+              {errText('licenseNumber')}
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>License/Certification Number *</label>
-              <input 
-                name="licenseNumber" 
-                placeholder="e.g., KMPDC-2024-12345" 
-                value={formData.licenseNumber} 
-                onChange={handleChange} 
-                style={inputStyle(errors.licenseNumber)} 
-              />
-              {errors.licenseNumber && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.licenseNumber}</p>}
+              <label style={labelStyle}>Specialization{requiredMark}</label>
+              <select name="specialization" value={formData.specialization}
+                onChange={handleChange} style={inputStyle(errors.specialization)}>
+                <option value="">Select specialization</option>
+                <option value="Anxiety">Anxiety</option>
+                <option value="Depression">Depression</option>
+                <option value="Loneliness">Loneliness</option>
+                <option value="General">General</option>
+              </select>
+              {errText('specialization')}
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Years of Experience *</label>
-              <select
-                name="yearsOfExperience"
-                value={formData.yearsOfExperience}
-                onChange={handleChange}
-                style={inputStyle(errors.yearsOfExperience)}
-              >
+              <label style={labelStyle}>Years of Experience{requiredMark}</label>
+              <select name="yearsOfExperience" value={formData.yearsOfExperience}
+                onChange={handleChange} style={inputStyle(errors.yearsOfExperience)}>
                 <option value="">Select years of experience</option>
                 <option value="0-1">Less than 1 year</option>
                 <option value="1-3">1-3 years</option>
@@ -495,145 +397,63 @@ export default function RegisterProfessional() {
                 <option value="5-10">5-10 years</option>
                 <option value="10+">10+ years</option>
               </select>
-              {errors.yearsOfExperience && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.yearsOfExperience}</p>}
+              {errText('yearsOfExperience')}
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Bio *</label>
-              <textarea 
-                name="bio" 
-                placeholder="Tell clients about your experience, approach, and what makes you unique..." 
-                value={formData.bio} 
-                onChange={handleChange} 
-                rows={4} 
-                style={{ ...inputStyle(errors.bio), resize: 'vertical' }} 
-              />
-              {errors.bio && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.bio}</p>}
+              <label style={labelStyle}>Bio{requiredMark}</label>
+              <textarea name="bio" placeholder="Tell clients about your experience, approach, and what makes you unique..."
+                value={formData.bio} onChange={handleChange} rows={4}
+                style={{ ...inputStyle(errors.bio), resize: 'vertical' }} />
+              {errText('bio')}
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Education & Qualifications</label>
-              <textarea 
-                name="education" 
-                placeholder="e.g., MSc Clinical Psychology - University of Nairobi (2018)&#10;BSc Psychology - Kenyatta University (2014)" 
-                value={formData.education} 
-                onChange={handleChange} 
-                rows={3} 
-                style={{ ...inputStyle(false), resize: 'vertical' }} 
-              />
+              <label style={labelStyle}>Education & Qualifications{requiredMark}</label>
+              <textarea name="education"
+                placeholder={`e.g., MSc Clinical Psychology - University of Nairobi (2018)\nBSc Psychology - Kenyatta University (2014)`}
+                value={formData.education} onChange={handleChange} rows={3}
+                style={{ ...inputStyle(errors.education), resize: 'vertical' }} />
+              {errText('education')}
             </div>
 
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Certifications & Awards</label>
-              <textarea 
-                name="certifications" 
-                placeholder="e.g., Certified CBT Practitioner - Beck Institute (2020)&#10;Best Mental Health Professional Award 2023" 
-                value={formData.certifications} 
-                onChange={handleChange} 
-                rows={3} 
-                style={{ ...inputStyle(false), resize: 'vertical' }} 
-              />
-            </div>
-
-            {/* Professional Portfolio Links */}
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16, marginTop: 24 }}>
-              Professional Portfolio Links
-            </h3>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-              Add links where clients can view your credentials, reviews, and professional background
-            </p>
-
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>LinkedIn Profile</label>
-              <input 
-                placeholder="https://linkedin.com/in/your-profile" 
-                value={formData.professionalLinks.linkedin} 
-                onChange={(e) => handleLinkChange('linkedin', e.target.value)} 
-                style={inputStyle(false)} 
-              />
-            </div>
-
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Professional Website/Portfolio</label>
-              <input 
-                placeholder="https://yourwebsite.com" 
-                value={formData.professionalLinks.website} 
-                onChange={(e) => handleLinkChange('website', e.target.value)} 
-                style={inputStyle(false)} 
-              />
+              <textarea name="certifications"
+                placeholder={`e.g., Certified CBT Practitioner - Beck Institute (2020)\nBest Mental Health Professional Award 2023`}
+                value={formData.certifications} onChange={handleChange} rows={3}
+                style={{ ...inputStyle(false), resize: 'vertical' }} />
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Credentials/Reviews Portal</label>
-              <input 
-                placeholder="e.g., https://psychologytoday.com/profile/123" 
-                value={formData.professionalLinks.portfolio} 
-                onChange={(e) => handleLinkChange('portfolio', e.target.value)} 
-                style={inputStyle(false)} 
-              />
+              <label style={labelStyle}>External Professional Profile URL</label>
+              <input name="externalProfileUrl"
+                placeholder="https://linkedin.com/in/yourprofile OR https://government-registry.gov/your-license"
+                value={formData.externalProfileUrl} onChange={handleChange}
+                style={inputStyle(errors.externalProfileUrl)} />
+              {errText('externalProfileUrl')}
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                Link to a page with your certificates, client reviews, or professional portfolio
+                Link to your LinkedIn, government registry, or official professional website. Clients will use this to verify your credentials.
               </p>
             </div>
 
-            {/* Languages Spoken */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Languages Spoken</label>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input 
-                  placeholder="e.g., English, Swahili" 
-                  value={newLanguage} 
-                  onChange={(e) => setNewLanguage(e.target.value)} 
-                  style={{ ...inputStyle(false), flex: 1 }} 
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addLanguage())}
-                />
-                <button 
-                  type="button" 
-                  onClick={addLanguage}
-                  style={{ padding: '0 16px', background: config.color, color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer' }}
-                >
-                  Add
-                </button>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {formData.languages.map(lang => (
-                  <span key={lang} style={{ background: 'rgba(156,39,176,0.1)', color: config.color, padding: '4px 10px', borderRadius: 16, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {lang}
-                    <button type="button" onClick={() => removeLanguage(lang)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 0, color: config.color }}>×</button>
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Password Section */}
+            {/* ── Account Security ── */}
             <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16, marginTop: 24 }}>
               Account Security
             </h3>
 
             <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>Create Password *</label>
+              <label style={labelStyle}>Create Password{requiredMark}</label>
               <div style={{ position: 'relative' }}>
-                <input 
-                  type={showPassword ? 'text' : 'password'} 
-                  name="password" 
-                  placeholder="Create a strong password" 
-                  value={formData.password} 
-                  onChange={handleChange} 
-                  style={{ ...inputStyle(errors.password), paddingRight: 44 }} 
-                />
-                <button 
-                  type="button" 
-                  onClick={() => setShowPassword(v => !v)}
-                  style={{ 
-                    position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 17,
-                    color: 'var(--text-muted)', padding: 0, width: 'auto'
-                  }}
-                >
+                <input type={showPassword ? 'text' : 'password'} name="password"
+                  placeholder="Create a strong password" value={formData.password}
+                  onChange={handleChange} style={{ ...inputStyle(errors.password), paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowPassword(v => !v)}
+                  style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17, color: 'var(--text-muted)', padding: 0, width: 'auto' }}>
                   {showPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
               </div>
-              {errors.password && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.password}</p>}
+              {errText('password')}
             </div>
 
             {formData.password && (
@@ -644,12 +464,7 @@ export default function RegisterProfessional() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
                   <span style={{ fontSize: 11, color: pwdStrength?.color }}>{pwdStrength?.text}</span>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    {[
-                      { key: 'length', label: '8+' }, 
-                      { key: 'uppercase', label: 'A-Z' }, 
-                      { key: 'lowercase', label: 'a-z' }, 
-                      { key: 'special', label: '!@#' }
-                    ].map(r => (
+                    {[{ key: 'length', label: '8+' }, { key: 'uppercase', label: 'A-Z' }, { key: 'lowercase', label: 'a-z' }, { key: 'special', label: '!@#' }].map(r => (
                       <span key={r.key} style={{ fontSize: 11, color: pwdChecks[r.key] ? '#48bb78' : 'var(--text-muted)' }}>
                         {pwdChecks[r.key] ? '✓' : '○'} {r.label}
                       </span>
@@ -660,29 +475,17 @@ export default function RegisterProfessional() {
             )}
 
             <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Confirm Password *</label>
+              <label style={labelStyle}>Confirm Password{requiredMark}</label>
               <div style={{ position: 'relative' }}>
-                <input 
-                  type={showConfirmPassword ? 'text' : 'password'} 
-                  name="confirmPassword" 
-                  placeholder="Confirm your password" 
-                  value={formData.confirmPassword} 
-                  onChange={handleChange} 
-                  style={{ ...inputStyle(errors.confirmPassword), paddingRight: 44 }} 
-                />
-                <button 
-                  type="button" 
-                  onClick={() => setShowConfirmPassword(v => !v)}
-                  style={{ 
-                    position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 17,
-                    color: 'var(--text-muted)', padding: 0, width: 'auto'
-                  }}
-                >
+                <input type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword"
+                  placeholder="Confirm your password" value={formData.confirmPassword}
+                  onChange={handleChange} style={{ ...inputStyle(errors.confirmPassword), paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowConfirmPassword(v => !v)}
+                  style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17, color: 'var(--text-muted)', padding: 0, width: 'auto' }}>
                   {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
               </div>
-              {errors.confirmPassword && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.confirmPassword}</p>}
+              {errText('confirmPassword')}
             </div>
 
             <button type="submit" disabled={loading}

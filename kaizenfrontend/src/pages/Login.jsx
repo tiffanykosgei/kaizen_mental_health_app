@@ -23,18 +23,35 @@ export default function Login() {
 
   const validateEmail = (email) => /\S+@\S+\.\S+/.test(email);
 
-  const storeAndNavigate = (data) => {
+  const storeAndNavigate = async (data) => {
     const finalFirstName = data.firstName || data.fullName?.split(' ')[0] || '';
     const finalLastName = data.lastName || data.fullName?.split(' ').slice(1).join(' ') || '';
     const finalFullName = data.fullName || `${finalFirstName} ${finalLastName}`.trim();
+    const token = data.token;
+    const userRole = data.role;
 
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('role', data.role);
+    // After storing localStorage items, check if user has completed assessment
+    localStorage.setItem('token', token);
+    localStorage.setItem('role', userRole);
     localStorage.setItem('fullName', finalFullName);
     localStorage.setItem('firstName', finalFirstName);
     localStorage.setItem('lastName', finalLastName);
 
-    // Redirect to dashboard - the DashboardRouter will handle which dashboard to show
+    // Only redirect clients to assessment — admins and professionals skip it
+    if (userRole === 'Client') {
+      try {
+        const assessmentCheck = await API.get('/selfassessment/has-completed', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!assessmentCheck.data.hasCompleted) {
+          navigate('/assessment');
+          return;
+        }
+      } catch {
+        // If check fails, just go to dashboard normally
+      }
+    }
+
     navigate('/dashboard');
   };
 
@@ -55,7 +72,7 @@ export default function Login() {
         return;
       }
 
-      storeAndNavigate(data);
+      await storeAndNavigate(data);
     } catch (err) {
       setError(err.response?.data?.message || err.response?.data || 'Invalid email or password.');
     } finally {
@@ -87,7 +104,7 @@ export default function Login() {
         return;
       }
 
-      storeAndNavigate(data);
+      await storeAndNavigate(data);
     } catch (err) {
       setError(err.response?.data?.message || 'Google sign-in failed. Please try again.');
     } finally {

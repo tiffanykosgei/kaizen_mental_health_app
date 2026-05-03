@@ -21,6 +21,12 @@ export default function AdminUsers() {
   const [dateFilter, setDateFilter] = useState('');
   const [sortBy, setSortBy] = useState('name_asc');
   const [showExportMenu, setShowExportMenu] = useState(false);
+  
+  // External link edit modal state
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [selectedProfessional, setSelectedProfessional] = useState(null);
+  const [externalLink, setExternalLink] = useState('');
+  const [linkUpdating, setLinkUpdating] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -40,6 +46,56 @@ export default function AdminUsers() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const isValidUrl = (url) => {
+    try {
+      new URL(url);
+      return url.startsWith('http://') || url.startsWith('https://');
+    } catch {
+      return false;
+    }
+  };
+
+  const handleUpdateExternalLink = async () => {
+    if (!selectedProfessional) return;
+    
+    if (externalLink && !isValidUrl(externalLink)) {
+      setError('Please enter a valid URL starting with http:// or https://');
+      return;
+    }
+    
+    setLinkUpdating(true);
+    setError('');
+    
+    try {
+      await API.put(`/admin/professionals/${selectedProfessional.id}/external-link`, {
+        externalProfileUrl: externalLink || null
+      });
+      
+      await fetchUsers();
+      setShowLinkModal(false);
+      setSelectedProfessional(null);
+      setExternalLink('');
+      
+      // Show success message briefly
+      const successMsg = document.createElement('div');
+      successMsg.textContent = 'External profile link updated successfully!';
+      successMsg.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#4caf50; color:white; padding:12px 20px; border-radius:8px; z-index:9999;';
+      document.body.appendChild(successMsg);
+      setTimeout(() => successMsg.remove(), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update link');
+    } finally {
+      setLinkUpdating(false);
+    }
+  };
+
+  const openLinkModal = (professional) => {
+    setSelectedProfessional(professional);
+    setExternalLink(professional.profile?.externalProfileUrl || '');
+    setShowLinkModal(true);
+    setError('');
   };
 
   const getCurrentUsers = () => {
@@ -111,6 +167,7 @@ export default function AdminUsers() {
       'Role': user.role,
       'Phone': user.phoneNumber || 'N/A',
       'Registered Date': new Date(user.dateRegistered).toLocaleDateString(),
+      'External Profile Link': user.role === 'Professional' ? (user.profile?.externalProfileUrl || 'N/A') : 'N/A',
       'Status': 'Active'
     }));
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -139,12 +196,13 @@ export default function AdminUsers() {
         user.email,
         user.role,
         user.phoneNumber || 'N/A',
-        new Date(user.dateRegistered).toLocaleDateString()
+        new Date(user.dateRegistered).toLocaleDateString(),
+        user.role === 'Professional' ? (user.profile?.externalProfileUrl || 'N/A') : 'N/A'
       ]);
       
       doc.autoTable({
         startY: 45,
-        head: [['Name', 'Email', 'Role', 'Phone', 'Registered']],
+        head: [['Name', 'Email', 'Role', 'Phone', 'Registered', 'External Link']],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
@@ -153,7 +211,6 @@ export default function AdminUsers() {
       
       doc.save(`${activeTab}_report_${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
-      alert('PDF downloaded successfully!');
     } catch (err) {
       console.error('PDF export failed:', err);
       alert('Failed to generate PDF. Error: ' + err.message);
@@ -194,6 +251,9 @@ export default function AdminUsers() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Name</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Email</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Registered</th>
+                {activeTab === 'professionals' && (
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>External Profile Link</th>
+                )}
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
               </tr>
             </thead>
@@ -209,9 +269,24 @@ export default function AdminUsers() {
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>{user.email}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>{formatDate(user.dateRegistered)}</td>
+                    {activeTab === 'professionals' && (
+                      <td style={{ padding: '12px 16px' }}>
+                        {user.profile?.externalProfileUrl ? (
+                          <a href={user.profile.externalProfileUrl} target="_blank" rel="noopener noreferrer" 
+                             style={{ color: '#e91e8c', textDecoration: 'none', fontSize: 13 }}>
+                            View Link ↗
+                          </a>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Not set</span>
+                        )}
+                      </td>
+                    )}
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
                         <button onClick={() => navigate(`/admin/users/${user.id}`)} style={{ background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '5px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer' }}>View</button>
+                        {user.role === 'Professional' && (
+                          <button onClick={() => openLinkModal(user)} style={{ background: 'transparent', color: '#9c27b0', border: '1px solid #9c27b0', padding: '5px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer' }}>🔗 Edit Link</button>
+                        )}
                         {user.role !== 'Admin' && (
                           <button onClick={() => handleDeleteUser(user.id, fullName)} style={{ background: 'var(--error-bg)', color: 'var(--error-text)', border: '1px solid var(--error-text)', padding: '5px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer' }}>Remove</button>
                         )}
@@ -263,13 +338,14 @@ export default function AdminUsers() {
       </div>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-        <button onClick={() => setActiveTab('clients')} style={{ background: 'transparent', color: activeTab === 'clients' ? 'var(--accent)' : 'var(--text-muted)', border: 'none', borderBottom: activeTab === 'clients' ? '2px solid var(--accent)' : '2px solid transparent', padding: '8px 0', marginRight: 16, cursor: 'pointer' }}>Clients ({filteredUsers.length} / {clients.length})</button>
-        <button onClick={() => setActiveTab('professionals')} style={{ background: 'transparent', color: activeTab === 'professionals' ? 'var(--accent)' : 'var(--text-muted)', border: 'none', borderBottom: activeTab === 'professionals' ? '2px solid var(--accent)' : '2px solid transparent', padding: '8px 0', marginRight: 16, cursor: 'pointer' }}>Professionals ({filteredUsers.length} / {professionals.length})</button>
-        <button onClick={() => setActiveTab('admins')} style={{ background: 'transparent', color: activeTab === 'admins' ? 'var(--accent)' : 'var(--text-muted)', border: 'none', borderBottom: activeTab === 'admins' ? '2px solid var(--accent)' : '2px solid transparent', padding: '8px 0', marginRight: 16, cursor: 'pointer' }}>Admins ({filteredUsers.length} / {admins.length})</button>
+        <button onClick={() => setActiveTab('clients')} style={{ background: 'transparent', color: activeTab === 'clients' ? 'var(--accent)' : 'var(--text-muted)', border: 'none', borderBottom: activeTab === 'clients' ? '2px solid var(--accent)' : '2px solid transparent', padding: '8px 0', marginRight: 16, cursor: 'pointer' }}>Clients ({clients.length})</button>
+        <button onClick={() => setActiveTab('professionals')} style={{ background: 'transparent', color: activeTab === 'professionals' ? 'var(--accent)' : 'var(--text-muted)', border: 'none', borderBottom: activeTab === 'professionals' ? '2px solid var(--accent)' : '2px solid transparent', padding: '8px 0', marginRight: 16, cursor: 'pointer' }}>Professionals ({professionals.length})</button>
+        <button onClick={() => setActiveTab('admins')} style={{ background: 'transparent', color: activeTab === 'admins' ? 'var(--accent)' : 'var(--text-muted)', border: 'none', borderBottom: activeTab === 'admins' ? '2px solid var(--accent)' : '2px solid transparent', padding: '8px 0', marginRight: 16, cursor: 'pointer' }}>Admins ({admins.length})</button>
       </div>
 
       <UserTable users={filteredUsers} title={`All ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}`} emptyMessage={`No ${activeTab} found matching your criteria.`} />
 
+      {/* Delete Confirmation Modal */}
       {showDeleteModal && userToDelete && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -282,6 +358,82 @@ export default function AdminUsers() {
           </div>
         </div>
       )}
+
+      {/* External Link Edit Modal */}
+      {showLinkModal && selectedProfessional && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: 500 }}>
+            <h3 style={{ fontSize: 18, marginBottom: 8, color: '#9c27b0' }}>Edit External Profile Link</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              Professional: <strong>{selectedProfessional.firstName} {selectedProfessional.lastName}</strong>
+            </p>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                External Profile URL
+              </label>
+              <input
+                type="url"
+                value={externalLink}
+                onChange={(e) => setExternalLink(e.target.value)}
+                placeholder="https://linkedin.com/in/username OR https://government-registry.gov/profile"
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  border: '1.5px solid var(--border)',
+                  borderRadius: 10,
+                  fontSize: 14,
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)'
+                }}
+              />
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                Leave empty to remove the link. Must start with http:// or https://
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                onClick={() => { setShowLinkModal(false); setSelectedProfessional(null); setExternalLink(''); setError(''); }}
+                style={{ flex: 1, background: 'transparent', color: '#e91e8c', border: '1.5px solid #e91e8c', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateExternalLink}
+                disabled={linkUpdating}
+                style={{ flex: 2, background: 'linear-gradient(135deg, #e91e8c, #9c27b0)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: linkUpdating ? 'not-allowed' : 'pointer', opacity: linkUpdating ? 0.6 : 1 }}
+              >
+                {linkUpdating ? 'Saving...' : 'Save Link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0,0,0,0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+        .modal-content {
+          background: var(--bg-card);
+          border-radius: 18px;
+          padding: 28px;
+          max-width: 450px;
+          width: 100%;
+          border: 1.5px solid #e91e8c;
+        }
+      `}</style>
     </div>
   );
 }

@@ -48,13 +48,15 @@ namespace kaizenbackend.Controllers
                 {
                     user.ProfessionalProfile.Bio,
                     user.ProfessionalProfile.Specialization,
+                    user.ProfessionalProfile.YearsOfExperience,
+                    user.ProfessionalProfile.Experience,
+                    user.ProfessionalProfile.Education,
+                    user.ProfessionalProfile.Certifications,
+                    user.ProfessionalProfile.LicenseNumber,
+                    user.ProfessionalProfile.AverageRating,
                     user.ProfessionalProfile.PaymentMethod,
                     user.ProfessionalProfile.PaymentAccount,
-                    user.ProfessionalProfile.AverageRating,
-                    user.ProfessionalProfile.CustomSplitPercentage,
-                    user.ProfessionalProfile.TotalEarnings,
-                    user.ProfessionalProfile.PendingPayout,
-                    user.ProfessionalProfile.PaidOut
+                    user.ProfessionalProfile.ExternalProfileUrl
                 } : null
             });
         }
@@ -68,7 +70,6 @@ namespace kaizenbackend.Controllers
             {
                 var user = await _context.Users
                     .Include(u => u.ProfessionalProfile)
-                    .ThenInclude(p => p.ProfessionalLinks)
                     .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
 
                 if (user == null)
@@ -76,31 +77,26 @@ namespace kaizenbackend.Controllers
 
                 return Ok(new
                 {
-                    user.Id,
-                    user.FirstName,
-                    user.LastName,
-                    user.Email,
-                    ProfessionalProfile = user.ProfessionalProfile != null ? new
+                    id         = user.Id,
+                    firstName  = user.FirstName,
+                    lastName   = user.LastName,
+                    email      = user.Email,
+                    profile = user.ProfessionalProfile != null ? new
                     {
-                        user.ProfessionalProfile.Bio,
-                        user.ProfessionalProfile.Specialization,
-                        user.ProfessionalProfile.YearsOfExperience,
-                        user.ProfessionalProfile.Education,
-                        user.ProfessionalProfile.Certifications,
-                        user.ProfessionalProfile.LicenseNumber,
-                        user.ProfessionalProfile.AverageRating,
-                        ProfessionalLinks = user.ProfessionalProfile.ProfessionalLinks != null ? new
-                        {
-                            user.ProfessionalProfile.ProfessionalLinks.Linkedin,
-                            user.ProfessionalProfile.ProfessionalLinks.Website,
-                            user.ProfessionalProfile.ProfessionalLinks.Portfolio
-                        } : null
+                        bio                = user.ProfessionalProfile.Bio ?? "",
+                        specialization     = user.ProfessionalProfile.Specialization ?? "",
+                        yearsOfExperience  = user.ProfessionalProfile.YearsOfExperience ?? "",
+                        education          = user.ProfessionalProfile.Education ?? "",
+                        certifications     = user.ProfessionalProfile.Certifications ?? "",
+                        licenseNumber      = user.ProfessionalProfile.LicenseNumber ?? "",
+                        averageRating      = user.ProfessionalProfile.AverageRating,
+                        externalProfileUrl = user.ProfessionalProfile.ExternalProfileUrl ?? ""
                     } : null
                 });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error retrieving professional profile.", error = ex.Message });
+                return StatusCode(500, new { message = "Error retrieving profile.", error = ex.Message });
             }
         }
 
@@ -145,7 +141,6 @@ namespace kaizenbackend.Controllers
             if (professional == null)
                 return NotFound("Professional profile not found.");
 
-            // Get all paid sessions for this professional
             var sessions = await _context.Sessions
                 .Where(s => s.ProfessionalId == userId && s.PaymentStatus == "Paid")
                 .ToListAsync();
@@ -155,14 +150,12 @@ namespace kaizenbackend.Controllers
             var paidOut = sessions.Where(s => s.PayoutStatus == "PaidOut").Sum(s => s.ProfessionalEarnings);
             var totalSessions = sessions.Count;
 
-            // Get average rating from completed sessions
             var ratings = await _context.Ratings
                 .Where(r => r.ProfessionalId == userId)
                 .ToListAsync();
 
             var averageRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
 
-            // Get current split percentage (from professional profile or default)
             var settings = await _context.PlatformSettings.FirstOrDefaultAsync();
             int defaultProfessionalPercentage = settings?.DefaultProfessionalPercentage ?? 60;
             int currentSplitPercentage = professional.CustomSplitPercentage ?? defaultProfessionalPercentage;
@@ -186,7 +179,6 @@ namespace kaizenbackend.Controllers
             if (userIdClaim == null) return Unauthorized();
             int userId = int.Parse(userIdClaim);
 
-            // Get all sessions that have been paid out
             var paidOutSessions = await _context.Sessions
                 .Where(s => s.ProfessionalId == userId && s.PayoutStatus == "PaidOut")
                 .OrderByDescending(s => s.UpdatedAt)
@@ -200,7 +192,6 @@ namespace kaizenbackend.Controllers
                 })
                 .ToListAsync();
 
-            // Group by date to simulate payouts (in reality, multiple sessions might be paid together)
             var payoutGroups = paidOutSessions
                 .GroupBy(s => s.Date.ToString("yyyy-MM"))
                 .Select(g => new
@@ -234,7 +225,6 @@ namespace kaizenbackend.Controllers
             if (user == null || professional == null)
                 return NotFound("Professional profile not found.");
 
-            // Update user fields - using FirstName and LastName instead of FullName
             if (!string.IsNullOrEmpty(dto.FirstName))
                 user.FirstName = dto.FirstName;
             
@@ -244,12 +234,26 @@ namespace kaizenbackend.Controllers
             if (!string.IsNullOrEmpty(dto.PhoneNumber))
                 user.PhoneNumber = dto.PhoneNumber;
 
-            // Update professional fields
             if (!string.IsNullOrEmpty(dto.Bio))
                 professional.Bio = dto.Bio;
             
             if (!string.IsNullOrEmpty(dto.Specialization))
                 professional.Specialization = dto.Specialization;
+            
+            if (!string.IsNullOrEmpty(dto.YearsOfExperience))
+                professional.YearsOfExperience = dto.YearsOfExperience;
+            
+            if (!string.IsNullOrEmpty(dto.Experience))
+                professional.Experience = dto.Experience;
+            
+            if (!string.IsNullOrEmpty(dto.Education))
+                professional.Education = dto.Education;
+            
+            if (!string.IsNullOrEmpty(dto.Certifications))
+                professional.Certifications = dto.Certifications;
+            
+            if (!string.IsNullOrEmpty(dto.LicenseNumber))
+                professional.LicenseNumber = dto.LicenseNumber;
 
             await _context.SaveChangesAsync();
 
@@ -261,7 +265,12 @@ namespace kaizenbackend.Controllers
                 fullName = user.FirstName + " " + user.LastName,
                 phoneNumber = user.PhoneNumber,
                 bio = professional.Bio,
-                specialization = professional.Specialization
+                specialization = professional.Specialization,
+                yearsOfExperience = professional.YearsOfExperience,
+                experience = professional.Experience,
+                education = professional.Education,
+                certifications = professional.Certifications,
+                licenseNumber = professional.LicenseNumber
             });
         }
 
@@ -292,19 +301,11 @@ namespace kaizenbackend.Controllers
             return Ok(sessions);
         }
     }
-}
 
-public class UpdateProfessionalProfileDto
-{
-    public string? FirstName { get; set; }
-    public string? LastName { get; set; }
-    public string? PhoneNumber { get; set; }
-    public string? Bio { get; set; }
-    public string? Specialization { get; set; }
-}
-
-public class PaymentSetupDto
-{
-    public string? PaymentMethod { get; set; }
-    public string? PaymentAccount { get; set; }
+    // DTOs
+    public class PaymentSetupDto
+    {
+        public string? PaymentMethod { get; set; }
+        public string? PaymentAccount { get; set; }
+    }
 }

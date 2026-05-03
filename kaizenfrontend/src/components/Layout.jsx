@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-//import { useTheme } from '../context/useTheme';
+import { useState, useEffect } from 'react';
 import API from '../api/axios';
 
 // Client navigation - Added Settings
@@ -31,7 +31,6 @@ const adminNav = [
   { icon: '📚', label: 'Resources', path: '/admin/resources' },
   { icon: '💰', label: 'Revenue', path: '/admin/revenue' },
   { icon: '💸', label: 'Payouts', path: '/admin/payouts' },
-  { icon: '📈', label: 'Reports', path: '/admin/reports' },
   { icon: '⚙️', label: 'Settings', path: '/settings' },
 ];
 
@@ -42,6 +41,59 @@ export default function Layout({ children }) {
   const firstName = localStorage.getItem('firstName') || '';
   const lastName = localStorage.getItem('lastName') || '';
   const fullName = localStorage.getItem('fullName') || `${firstName} ${lastName}`.trim() || 'User';
+  
+  // State for profile picture
+  const [profilePicture, setProfilePicture] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Fetch profile picture on mount and when refreshKey changes
+  useEffect(() => {
+    const fetchProfilePicture = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        const response = await API.get('/auth/profile');
+        const pictureUrl = response.data.profilePicture;
+
+        if (pictureUrl) {
+          const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+          // Add timestamp to prevent caching
+          setProfilePicture(`${baseUrl}${pictureUrl}?t=${Date.now()}`);
+        } else {
+          setProfilePicture('');
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile picture:', err);
+        setProfilePicture('');
+      }
+    };
+
+    fetchProfilePicture();
+  }, [refreshKey]);
+
+  // Listen for events to update picture
+  useEffect(() => {
+    // Handle storage events (for cross-tab updates)
+    const handleStorageChange = (e) => {
+      if (e.key === 'profilePictureUpdated') {
+        setRefreshKey(prev => prev + 1);
+      }
+    };
+    
+    // Handle custom event (for same-tab updates)
+    const handleCustomEvent = () => {
+      setRefreshKey(prev => prev + 1);
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('profilePictureChanged', handleCustomEvent);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('profilePictureChanged', handleCustomEvent);
+    };
+  }, []);
 
   const navItems = role === 'Professional' ? professionalNav
     : role === 'Admin' ? adminNav
@@ -74,7 +126,16 @@ export default function Layout({ children }) {
         {/* Profile Section */}
         <div className="sidebar-profile" onClick={handleProfileClick}>
           <div className="profile-avatar">
-            <span className="profile-initials">{initials}</span>
+            {profilePicture ? (
+              <img 
+                src={profilePicture} 
+                alt="Profile" 
+                className="profile-avatar-img"
+                onError={() => setProfilePicture('')}
+              />
+            ) : (
+              <span className="profile-initials">{initials}</span>
+            )}
           </div>
           <div className="profile-info">
             <div className="profile-name">{fullName.split(' ')[0]}</div>
@@ -109,6 +170,71 @@ export default function Layout({ children }) {
       <main className="main-content">
         {children}
       </main>
+
+      <style>{`
+        /* Profile Avatar with Image Support */
+        .profile-avatar {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #e91e8c, #9c27b0);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          flex-shrink: 0;
+        }
+        
+        .profile-avatar-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        
+        .profile-initials {
+          font-size: 18px;
+          font-weight: 600;
+          color: white;
+        }
+        
+        /* Profile Section */
+        .sidebar-profile {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px;
+          margin: 8px 12px;
+          background: var(--bg-hover, rgba(233,30,140,0.1));
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        
+        .sidebar-profile:hover {
+          background: var(--bg-hover, rgba(233,30,140,0.15));
+          transform: translateX(2px);
+        }
+        
+        .profile-info {
+          flex: 1;
+          min-width: 0;
+        }
+        
+        .profile-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary, #1a202c);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        
+        .profile-link {
+          font-size: 11px;
+          color: #e91e8c;
+          margin-top: 2px;
+        }
+      `}</style>
     </div>
   );
 }

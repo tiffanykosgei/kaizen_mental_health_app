@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using kaizenbackend.Data;
@@ -11,9 +12,11 @@ using kaizenbackend.Data;
 namespace kaizenbackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260422112509_RemoveProfessionalLinksAndLanguages")]
+    partial class RemoveProfessionalLinksAndLanguages
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -179,7 +182,7 @@ namespace kaizenbackend.Migrations
                             Id = 1,
                             DefaultPlatformPercentage = 40,
                             DefaultProfessionalPercentage = 60,
-                            UpdatedAt = new DateTime(2026, 4, 23, 6, 47, 49, 915, DateTimeKind.Utc).AddTicks(6752)
+                            UpdatedAt = new DateTime(2026, 4, 22, 11, 25, 8, 766, DateTimeKind.Utc).AddTicks(4594)
                         });
                 });
 
@@ -219,9 +222,6 @@ namespace kaizenbackend.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
-
-                    b.Property<string>("ExternalProfileUrl")
-                        .HasColumnType("text");
 
                     b.Property<string>("LicenseNumber")
                         .IsRequired()
@@ -600,9 +600,6 @@ namespace kaizenbackend.Migrations
                     b.Property<string>("PhoneNumber")
                         .HasColumnType("text");
 
-                    b.Property<string>("ProfilePicture")
-                        .HasColumnType("text");
-
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("text");
@@ -708,7 +705,7 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Resource");

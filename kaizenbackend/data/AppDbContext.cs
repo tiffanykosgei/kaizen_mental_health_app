@@ -144,7 +144,7 @@ namespace kaizenbackend.Data
                 .HasOne(r => r.User)
                 .WithMany()
                 .HasForeignKey(r => r.UserId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Ensure one user can only rate a resource once
             modelBuilder.Entity<ResourceRating>()
@@ -156,12 +156,7 @@ namespace kaizenbackend.Data
             // ============================================
             
             // Configure JSON serialization for ProfessionalLinks (stored as JSON)
-            modelBuilder.Entity<ProfessionalProfile>()
-                .Property(p => p.ProfessionalLinks)
-                .HasConversion(
-                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
-                    v => JsonSerializer.Deserialize<ProfessionalLinks>(v, (JsonSerializerOptions)null) ?? new ProfessionalLinks()
-                );
+        
 
             // Configure decimal properties with precision
             modelBuilder.Entity<ProfessionalProfile>()
@@ -208,7 +203,11 @@ namespace kaizenbackend.Data
             modelBuilder.Entity<ProfessionalProfile>()
                 .Property(p => p.LicenseNumber)
                 .HasMaxLength(100);
-
+// Inside OnModelCreating method, in the ProfessionalProfile configuration section:
+modelBuilder.Entity<ProfessionalProfile>()
+    .Property(p => p.Experience)
+    .HasMaxLength(2000); // Add this configuration
+    
             modelBuilder.Entity<ProfessionalProfile>()
                 .Property(p => p.PaymentMethod)
                 .HasMaxLength(20)

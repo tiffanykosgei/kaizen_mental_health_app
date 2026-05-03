@@ -2,9 +2,14 @@ import { useState, useEffect } from 'react';
 import API from '../../api/axios';
 import StatsCard from './components/StatsCard';
 import * as XLSX from 'xlsx';
-// Import jsPDF correctly
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+
+const PINK = '#e91e8c';
+const PURPLE = '#9c27b0';
+const PINK_LIGHT = 'rgba(233,30,140,0.1)';
+const PURPLE_LIGHT = 'rgba(156,39,176,0.1)';
 
 export default function AdminSessions() {
   const [sessions, setSessions] = useState([]);
@@ -14,6 +19,8 @@ export default function AdminSessions() {
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [receiptModal, setReceiptModal] = useState(null);
+  const [downloadLoading, setDownloadLoading] = useState(false);
   const [stats, setStats] = useState({ total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0, totalRevenue: 0 });
 
   useEffect(() => { fetchSessions(); }, []);
@@ -25,6 +32,9 @@ export default function AdminSessions() {
       const allSessions = response.data;
       const processedSessions = allSessions.map(session => ({
         ...session,
+        amount: 1500,
+        platformFee: 600,
+        professionalEarning: 900,
         clientName: getClientName(session),
         professionalName: getProfessionalName(session)
       }));
@@ -33,7 +43,7 @@ export default function AdminSessions() {
       const confirmed = processedSessions.filter(s => s.status === 'Confirmed').length;
       const completed = processedSessions.filter(s => s.status === 'Completed').length;
       const cancelled = processedSessions.filter(s => s.status === 'Cancelled').length;
-      const totalRevenue = processedSessions.filter(s => s.paymentStatus === 'Paid').reduce((sum, s) => sum + (s.platformFee || (s.amount * 0.4) || 0), 0);
+      const totalRevenue = processedSessions.filter(s => s.paymentStatus === 'Paid').reduce((sum, s) => sum + (s.platformFee || 600), 0);
       setStats({ total: processedSessions.length, pending, confirmed, completed, cancelled, totalRevenue });
     } catch (err) {
       console.error('Failed to fetch sessions:', err);
@@ -91,56 +101,55 @@ export default function AdminSessions() {
     return 'N/A';
   };
 
-  const generateSessionReceipt = (session) => {
+  const downloadReceiptAsPDF = async () => {
+    setDownloadLoading(true);
+    const receiptElement = document.getElementById('receipt-content');
+    if (!receiptElement) {
+      setDownloadLoading(false);
+      return;
+    }
+    
     try {
-      // Create new PDF document
-      const doc = new jsPDF();
-      
-      // Add content
-      doc.setFontSize(20);
-      doc.setTextColor(233, 30, 140);
-      doc.text('Kaizen Mental Wellness', 20, 20);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(100, 100, 100);
-      doc.text('Session Payment Receipt', 20, 35);
-      doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 45);
-      doc.text(`Receipt #: SESS-${session.id}-${Date.now()}`, 20, 52);
-      
-      doc.line(20, 58, 190, 58);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text('Session Details', 20, 70);
-      
-      // Use autoTable
-      doc.autoTable({
-        startY: 78,
-        head: [['Field', 'Value']],
-        body: [
-          ['Session ID', session.id.toString()],
-          ['Date', new Date(session.sessionDate).toLocaleString()],
-          ['Client', session.clientName],
-          ['Professional', session.professionalName],
-          ['Status', session.status],
-          ['Amount Paid', `KSh ${(session.amount || 0).toLocaleString()}`],
-          ['Payment Status', session.paymentStatus],
-          ['Transaction ID', session.paymentReference || 'N/A']
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
-        margin: { left: 20, right: 20 }
+      const canvas = await html2canvas(receiptElement, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        logging: false
       });
       
-      // Save the PDF
-      doc.save(`receipt_session_${session.id}.pdf`);
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
       
-      // Show success message
-      alert(`Receipt for session #${session.id} downloaded successfully!`);
-    } catch (err) {
-      console.error('PDF generation failed:', err);
-      alert('Failed to generate PDF. Please check console for errors.');
+      const imgWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      pdf.save(`receipt_${receiptModal.id}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to download receipt. Please try again.');
+    } finally {
+      setDownloadLoading(false);
     }
+  };
+
+  const openReceiptModal = (session) => {
+    setReceiptModal(session);
   };
 
   const getFilteredSessions = () => {
@@ -170,7 +179,9 @@ export default function AdminSessions() {
       'Client': session.clientName,
       'Professional': session.professionalName,
       'Status': session.status,
-      'Amount (KSh)': session.amount || 0,
+      'Amount (KSh)': 1500,
+      'Platform Fee (KSh)': 600,
+      'Professional Earnings (KSh)': 900,
       'Payment Status': session.paymentStatus
     }));
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -185,7 +196,6 @@ export default function AdminSessions() {
       const filtered = getFilteredSessions();
       const doc = new jsPDF('landscape');
       
-      // Header
       doc.setFontSize(18);
       doc.setTextColor(233, 30, 140);
       doc.text('Sessions Report', 14, 20);
@@ -198,18 +208,16 @@ export default function AdminSessions() {
       
       const startY = filter !== 'all' ? 52 : 45;
       
-      // Prepare table data
       const tableData = filtered.map(session => [
         session.id.toString(),
         new Date(session.sessionDate).toLocaleDateString(),
         session.clientName,
         session.professionalName,
         session.status,
-        `KSh ${(session.amount || 0).toLocaleString()}`,
+        `KSh 1,500`,
         session.paymentStatus
       ]);
       
-      // Generate table
       doc.autoTable({
         startY: startY,
         head: [['ID', 'Date', 'Client', 'Professional', 'Status', 'Amount', 'Payment']],
@@ -219,7 +227,6 @@ export default function AdminSessions() {
         alternateRowStyles: { fillColor: [245, 245, 245] }
       });
       
-      // Save
       doc.save(`sessions_report_${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
       alert('PDF downloaded successfully!');
@@ -343,12 +350,12 @@ export default function AdminSessions() {
                       <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{session.clientName}</td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{session.professionalName}</td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-secondary)' }}>{formatDate(session.sessionDate)}</td>
-                      <td style={{ padding: '14px 16px', textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#e91e8c' }}>{formatCurrency(session.amount)}</td>
+                      <td style={{ padding: '14px 16px', textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#e91e8c' }}>KSh 1,500</td>
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}><span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: statusStyle.bg, color: statusStyle.color }}>{session.status}</span></td>
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}><span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: paymentStyle.bg, color: paymentStyle.color }}>{session.paymentStatus === 'Paid' ? '✓ Paid' : session.paymentStatus === 'Pending' ? '⏳ Pending' : session.paymentStatus}</span></td>
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                         {session.paymentStatus === 'Paid' && (
-                          <button onClick={() => generateSessionReceipt(session)} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'white', cursor: 'pointer', fontSize: 11 }}>📄 Receipt</button>
+                          <button onClick={() => openReceiptModal(session)} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: 'linear-gradient(135deg, #e91e8c, #9c27b0)', color: 'white', cursor: 'pointer', fontSize: 11 }}>🧾 View Receipt</button>
                         )}
                       </td>
                     </tr>
@@ -363,9 +370,99 @@ export default function AdminSessions() {
       <div style={{ marginTop: 24, padding: 16, background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
           <div><span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Showing {filteredSessions.length} of {sessions.length} sessions</span></div>
-          <div><span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Total Revenue: <strong style={{ color: '#e91e8c', fontSize: 16 }}>{formatCurrency(filteredSessions.filter(s => s.paymentStatus === 'Paid').reduce((sum, s) => sum + (s.amount || 0), 0))}</strong></span></div>
+          <div><span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Total Revenue: <strong style={{ color: '#e91e8c', fontSize: 16 }}>{formatCurrency(filteredSessions.filter(s => s.paymentStatus === 'Paid').reduce((sum) => sum + 1500, 0))}</strong></span></div>
         </div>
       </div>
+
+      {/* Receipt Modal */}
+      {receiptModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={() => setReceiptModal(null)}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 18, maxWidth: 460, width: '100%', border: `1.5px solid ${PINK}`, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div id="receipt-content" style={{ padding: 32, overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div>
+                  <h3 style={{ fontSize: 20, fontWeight: 700, color: PURPLE, margin: 0 }}>🧾 Payment Receipt</h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>Session Payment Confirmation</p>
+                </div>
+              </div>
+
+              <div style={{ background: `linear-gradient(135deg, ${PINK_LIGHT}, ${PURPLE_LIGHT})`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>🧾</div>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: PURPLE, margin: 0 }}>Kaizen Mental Health Platform</p>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '4px 0 0' }}>Official Payment Receipt</p>
+                </div>
+
+                <div style={{ height: 1, background: `linear-gradient(90deg, ${PINK}, ${PURPLE})`, marginBottom: 16 }} />
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Receipt Number</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>KZN-{receiptModal.id}-{new Date(receiptModal.sessionDate).getFullYear()}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Transaction Date</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>
+                    {new Date(receiptModal.sessionDate).toLocaleString('en-KE', {
+                      year: 'numeric', month: 'long', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Client</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: PURPLE, margin: '4px 0 0' }}>{receiptModal.clientName}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Professional</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: PURPLE, margin: '4px 0 0' }}>{receiptModal.professionalName}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Session Date & Time</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>{formatDate(receiptModal.sessionDate)}</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Payment Method</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0' }}>💳 M-Pesa</p>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Payment Status</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: '#4caf50', margin: '4px 0 0' }}>✓ Paid</p>
+                </div>
+
+                <div style={{ background: 'var(--bg-hover)', borderRadius: 8, padding: '12px 16px', marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Total Amount</p>
+                    <p style={{ fontSize: 20, fontWeight: 700, color: PINK, margin: 0 }}>KSh 1,500</p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: 0 }}>
+                  Thank you for choosing Kaizen. This receipt serves as proof of payment.
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                  For any inquiries, please contact support@kaizen.com
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '0 32px 32px 32px', borderTop: '1px solid var(--border)', paddingTop: 24 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setReceiptModal(null)} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: 'transparent', color: PINK, border: `1.5px solid ${PINK}`, borderRadius: 10, cursor: 'pointer' }}>Close</button>
+                <button onClick={() => window.print()} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: `linear-gradient(135deg, ${PINK}, ${PURPLE})`, color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer' }}>🖨️ Print</button>
+                <button onClick={downloadReceiptAsPDF} disabled={downloadLoading} style={{ flex: 1, padding: '11px 0', fontSize: 14, fontWeight: 600, background: downloadLoading ? 'var(--border)' : `linear-gradient(135deg, ${PINK}, ${PURPLE})`, color: 'white', border: 'none', borderRadius: 10, cursor: downloadLoading ? 'not-allowed' : 'pointer', opacity: downloadLoading ? 0.6 : 1 }}>{downloadLoading ? 'Downloading...' : '📥 Download PDF'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
