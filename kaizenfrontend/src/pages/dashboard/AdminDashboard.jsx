@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API from '../../api/axios';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement, Filler } from 'chart.js';
+import { LegalLinks } from '../../components/LegalConsent';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler } from 'chart.js';
 import { Pie, Line } from 'react-chartjs-2';
 
-// Register all plugins including Filler
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement, Filler);
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler);
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [recentSessions, setRecentSessions] = useState([]);
-  const [recentAssessments, setRecentAssessments] = useState([]);
   const [revenueData, setRevenueData] = useState(null);
   
   const firstName = localStorage.getItem('firstName') || '';
@@ -24,293 +25,157 @@ export default function AdminDashboard() {
     return 'Good evening';
   };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  useEffect(() => { fetchDashboardData(); }, []);
 
-  // Helper function to convert earnings to proper KES values
-  // Assuming each session should be KES 1,500
-  const convertToProperEarnings = (value) => {
-    // If value is very small (like 10, 24), multiply by 150 to get 1500, 3600
-    if (value < 100) {
-      return value * 150;
-    }
-    // If value is already reasonable (like 900, 4500), keep as is
-    return value;
-  };
+  const convertToProperEarnings = (value) => (value < 100 ? value * 150 : value);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const [statsRes, sessionsRes, assessmentsRes, revenueRes] = await Promise.all([
+      const [statsRes, sessionsRes, revenueRes] = await Promise.all([
         API.get('/Admin/stats'),
         API.get('/Admin/sessions'),
-        API.get('/Admin/assessments'),
         API.get('/Payment/platform-revenue')
       ]);
-      
       setStats(statsRes.data);
-      setRecentSessions(sessionsRes.data.slice(0, 5));
-      setRecentAssessments(assessmentsRes.data.slice(0, 5));
-      
-      // Convert revenue data to proper KES values
-      let revenueDataRaw = revenueRes.data || {};
-      let convertedRevenueData = {
+      setRecentSessions(sessionsRes.data || []);
+      const revenueDataRaw = revenueRes.data || {};
+      setRevenueData({
         summary: {
           totalPlatformFees: convertToProperEarnings(revenueDataRaw.summary?.totalPlatformFees || 0),
-          totalProfessionalEarnings: convertToProperEarnings(revenueDataRaw.summary?.totalProfessionalEarnings || 0),
           totalRevenue: convertToProperEarnings(revenueDataRaw.summary?.totalRevenue || 0)
         }
-      };
-      
-      setRevenueData(convertedRevenueData);
-    } catch (err) {
-      console.error('Failed to fetch dashboard data:', err);
-    } finally {
-      setLoading(false);
-    }
+      });
+    } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
   const getSessionTrends = () => {
-    const last7Days = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      last7Days.push(date.toLocaleDateString('en-KE', { month: 'short', day: 'numeric' }));
+    const daysInWeek = [];
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+
+    for (let offset = 0; offset < 7; offset++) {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + offset);
+      daysInWeek.push({
+        date,
+        label: date.toLocaleDateString('en-KE', { weekday: 'short' }),
+        tooltipLabel: date.toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'short' })
+      });
     }
-    
-    const completed = last7Days.map(day => {
-      return recentSessions.filter(s => {
-        const sessionDate = new Date(s.sessionDate).toLocaleDateString('en-KE', { month: 'short', day: 'numeric' });
-        return sessionDate === day && s.status === 'Completed';
-      }).length;
-    });
-    
-    const pending = last7Days.map(day => {
-      return recentSessions.filter(s => {
-        const sessionDate = new Date(s.sessionDate).toLocaleDateString('en-KE', { month: 'short', day: 'numeric' });
-        return sessionDate === day && s.status === 'Pending';
-      }).length;
-    });
-    
-    return { labels: last7Days, completed, pending };
+
+    const sameDay = (left, right) =>
+      left.getFullYear() === right.getFullYear() &&
+      left.getMonth() === right.getMonth() &&
+      left.getDate() === right.getDate();
+
+    const completed = daysInWeek.map(({ date }) => recentSessions.filter(s => {
+      const sessionDate = new Date(s.sessionDate);
+      return sameDay(sessionDate, date) && s.status === 'Completed';
+    }).length);
+    const pending = daysInWeek.map(({ date }) => recentSessions.filter(s => {
+      const sessionDate = new Date(s.sessionDate);
+      return sameDay(sessionDate, date) && s.status === 'Pending';
+    }).length);
+    const confirmed = daysInWeek.map(({ date }) => recentSessions.filter(s => {
+      const sessionDate = new Date(s.sessionDate);
+      return sameDay(sessionDate, date) && s.status === 'Confirmed';
+    }).length);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    return {
+      labels: daysInWeek.map(d => d.label),
+      tooltipLabels: daysInWeek.map(d => d.tooltipLabel),
+      completed,
+      pending,
+      confirmed,
+      rangeLabel: `${weekStart.toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })} - ${weekEnd.toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}`
+    };
   };
 
   const sessionTrends = getSessionTrends();
 
   const lineOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { position: 'top', labels: { color: 'var(--text-primary)', font: { family: 'inherit' } } },
+      legend: { position: 'top', labels: { color: 'var(--text-primary)', usePointStyle: true } },
+      tooltip: { callbacks: { title: (items) => sessionTrends.tooltipLabels[items[0].dataIndex] } }
     },
     scales: {
-      y: { ticks: { color: 'var(--text-secondary)' }, grid: { color: 'var(--border)' } },
-      x: { ticks: { color: 'var(--text-secondary)' }, grid: { color: 'var(--border)' } }
+      y: { beginAtZero: true, ticks: { precision: 0, color: 'var(--text-secondary)' }, grid: { color: 'var(--border)' }, title: { display: true, text: 'Number of sessions', color: 'var(--text-muted)' } },
+      x: { ticks: { color: 'var(--text-secondary)', maxRotation: 0, autoSkip: false }, grid: { color: 'var(--border)' }, title: { display: true, text: sessionTrends.rangeLabel, color: 'var(--text-muted)' } }
     }
   };
 
-  if (loading) {
-    return <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)', fontFamily: 'inherit' }}>Loading dashboard...</div>;
-  }
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>Loading dashboard...</div>;
+
+  const statCards = [
+    { label: 'Total Users', value: (stats?.totalClients || 0) + (stats?.totalProfessionals || 0), detail: `${stats?.totalClients || 0} Clients · ${stats?.totalProfessionals || 0} Pros`, color: 'var(--accent)', path: '/admin/users' },
+    { label: 'Total Sessions', value: stats?.totalSessions || 0, detail: `${stats?.sessions?.completed || 0} Completed`, color: 'var(--secondary)', path: '/admin/sessions' },
+    { label: 'Total Revenue', value: `KES ${revenueData?.summary?.totalPlatformFees?.toLocaleString() || 0}`, detail: 'Platform Fees', color: 'var(--warning-text)', path: '/admin/revenue' },
+    { label: 'Self Assessments', value: stats?.totalAssessments || 0, detail: 'Mental Health Check-ins', color: 'var(--info-text)', path: '/admin/assessments' }
+  ];
 
   return (
-    <div className="dashboard-container" style={{ fontFamily: 'inherit' }}>
-      {/* Greeting Card */}
-      <div className="dashboard-greeting-card">
-        <div style={{ flex: 1 }}>
-          <p className="dashboard-greeting-badge">{getGreeting()}</p>
-          <h2 className="dashboard-greeting-title">
-            {displayName ? `${getGreeting()}, ${displayName}!` : `${getGreeting()}!`}
-          </h2>
-          <p className="dashboard-greeting-message">
-            Oversee the platform and ensure everything runs smoothly. Here's your platform overview.
-          </p>
+    <>
+      <div style={{ fontFamily: 'inherit', padding: '0 24px', maxWidth: 1200, margin: '0 auto' }}>
+        {/* Greeting Card */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', borderRadius: 16, padding: '16px 24px', marginBottom: 20, border: '1px solid var(--border)' }}>
+          <div><p style={{ fontSize: 12, color: 'var(--primary)', marginBottom: 4 }}>{getGreeting()}</p><h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>{displayName ? `${getGreeting()}, ${displayName}!` : `${getGreeting()}!`}</h2><p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>Platform overview</p></div>
+          <div style={{ width: 60, height: 60, borderRadius: 12, overflow: 'hidden' }}><img src="/brain-wellness.jpeg" alt="Wellness" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display = 'none'} /></div>
         </div>
-        <div className="dashboard-image-container">
-          <img
-            src="/brain-wellness.jpeg"
-            alt="Take care of your mind"
-            className="dashboard-image"
-            onError={e => e.target.style.display = 'none'}
-          />
-        </div>
-      </div>
 
-      {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
-        <div className="stats-card" style={{ background: 'var(--bg-card)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'inherit' }}>Total Users</p>
-          <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent)', margin: 0, fontFamily: 'inherit' }}>{(stats?.totalClients || 0) + (stats?.totalProfessionals || 0)}</p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, fontFamily: 'inherit' }}>{stats?.totalClients || 0} Clients · {stats?.totalProfessionals || 0} Pros</p>
-        </div>
-        <div className="stats-card" style={{ background: 'var(--bg-card)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'inherit' }}>Total Sessions</p>
-          <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--secondary)', margin: 0, fontFamily: 'inherit' }}>{stats?.totalSessions || 0}</p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, fontFamily: 'inherit' }}>{stats?.sessions?.completed || 0} Completed</p>
-        </div>
-        <div className="stats-card" style={{ background: 'var(--bg-card)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'inherit' }}>Total Revenue</p>
-          <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--warning-text)', margin: 0, fontFamily: 'inherit' }}>KES {revenueData?.summary?.totalPlatformFees?.toLocaleString() || 0}</p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, fontFamily: 'inherit' }}>Platform Fees</p>
-        </div>
-        <div className="stats-card" style={{ background: 'var(--bg-card)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'inherit' }}>Self Assessments</p>
-          <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--info-text)', margin: 0, fontFamily: 'inherit' }}>{stats?.totalAssessments || 0}</p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, fontFamily: 'inherit' }}>Mental Health Check-ins</p>
-        </div>
-      </div>
-
-      {/* Charts Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24, marginBottom: 24 }}>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 20, border: '1px solid var(--border)' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)', fontFamily: 'inherit' }}>Session Trends (Last 7 Days)</h3>
-          <div style={{ height: 250 }}>
-            <Line 
-              data={{
-                labels: sessionTrends.labels,
-                datasets: [
-                  { label: 'Completed', data: sessionTrends.completed, borderColor: 'var(--secondary)', backgroundColor: 'rgba(29, 158, 117, 0.1)', fill: true, tension: 0.4 },
-                  { label: 'Pending', data: sessionTrends.pending, borderColor: 'var(--warning-text)', backgroundColor: 'rgba(245, 158, 11, 0.1)', fill: true, tension: 0.4 }
-                ]
-              }}
-              options={lineOptions}
-            />
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 20, border: '1px solid var(--border)' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)', fontFamily: 'inherit' }}>Wellbeing Levels Distribution</h3>
-          <div style={{ height: 250 }}>
-            <Pie 
-              data={{
-                labels: ['Good', 'Mild', 'Moderate', 'Severe'],
-                datasets: [{
-                  data: [
-                    stats?.assessmentsByLevel?.good || 0,
-                    stats?.assessmentsByLevel?.mild || 0,
-                    stats?.assessmentsByLevel?.moderate || 0,
-                    stats?.assessmentsByLevel?.severe || 0
-                  ],
-                  backgroundColor: ['var(--secondary)', 'var(--warning-text)', 'var(--warning-text)', 'var(--error-text)'],
-                  borderWidth: 0
-                }]
-              }}
-              options={{ 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                plugins: { 
-                  legend: { position: 'bottom', labels: { color: 'var(--text-primary)', font: { family: 'inherit' } } } 
-                } 
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity Tables */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24, marginBottom: 24 }}>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 20, border: '1px solid var(--border)' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)', fontFamily: 'inherit' }}>Recent Sessions</h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', fontSize: 13, fontFamily: 'inherit' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 0', color: 'var(--text-muted)' }}>Client</th>
-                  <th style={{ textAlign: 'left', padding: '8px 0', color: 'var(--text-muted)' }}>Professional</th>
-                  <th style={{ textAlign: 'left', padding: '8px 0', color: 'var(--text-muted)' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentSessions.map(session => (
-                  <tr key={session.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '8px 0', color: 'var(--text-primary)' }}>{session.client?.clientName || 'N/A'}</td>
-                    <td style={{ padding: '8px 0', color: 'var(--text-primary)' }}>{session.professional?.professionalName || 'N/A'}</td>
-                    <td style={{ padding: '8px 0' }}>
-                      <span style={{ 
-                        background: session.status === 'Completed' ? 'var(--success-bg)' : session.status === 'Pending' ? 'var(--warning-bg)' : 'var(--info-bg)',
-                        color: session.status === 'Completed' ? 'var(--success-text)' : session.status === 'Pending' ? 'var(--warning-text)' : 'var(--info-text)',
-                        padding: '2px 8px', borderRadius: 12, fontSize: 11
-                      }}>{session.status}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 20, border: '1px solid var(--border)' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)', fontFamily: 'inherit' }}>Recent Assessments</h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', fontSize: 13, fontFamily: 'inherit' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 0', color: 'var(--text-muted)' }}>User</th>
-                  <th style={{ textAlign: 'left', padding: '8px 0', color: 'var(--text-muted)' }}>Overall Level</th>
-                  <th style={{ textAlign: 'left', padding: '8px 0', color: 'var(--text-muted)' }}>Primary Concern</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentAssessments.map(assessment => (
-                  <tr key={assessment.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '8px 0', color: 'var(--text-primary)' }}>{assessment.user?.userName || 'N/A'}</td>
-                    <td style={{ padding: '8px 0' }}>
-                      <span style={{ 
-                        background: assessment.overallLevel === 'Good' ? 'var(--success-bg)' : assessment.overallLevel === 'Mild' ? 'var(--info-bg)' : assessment.overallLevel === 'Moderate' ? 'var(--warning-bg)' : 'var(--error-bg)',
-                        color: assessment.overallLevel === 'Good' ? 'var(--success-text)' : assessment.overallLevel === 'Mild' ? 'var(--info-text)' : assessment.overallLevel === 'Moderate' ? 'var(--warning-text)' : 'var(--error-text)',
-                        padding: '2px 8px', borderRadius: 12, fontSize: 11
-                      }}>{assessment.overallLevel}</span>
-                    </td>
-                    <td style={{ padding: '8px 0', color: 'var(--text-primary)' }}>{assessment.primaryConcern || 'N/A'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Primary Concerns & Revenue Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24, marginBottom: 24 }}>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 20, border: '1px solid var(--border)' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)', fontFamily: 'inherit' }}>Primary Concerns (All Assessments)</h3>
-          <div style={{ display: 'flex', gap: 16, justifyContent: 'space-around' }}>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent)', margin: 0, fontFamily: 'inherit' }}>{stats?.primaryConcerns?.anxiety || 0}</p>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'inherit' }}>Anxiety</p>
+        {/* Stats Cards – clickable */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+          {statCards.map(card => (
+            <div key={card.label} onClick={() => navigate(card.path)} style={{ background: 'var(--bg-card)', padding: '16px 12px', borderRadius: 12, border: '1px solid var(--border)', cursor: 'pointer' }}>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{card.label}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, color: card.color, margin: 0 }}>{card.value}</p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{card.detail}</p>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent)', margin: 0, fontFamily: 'inherit' }}>{stats?.primaryConcerns?.depression || 0}</p>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'inherit' }}>Depression</p>
+          ))}
+        </div>
+
+        {/* Two charts side by side */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20, marginBottom: 20 }}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: '16px', border: '1px solid var(--border)' }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>Sessions This Week</h3>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Daily completed, confirmed, and pending sessions for {sessionTrends.rangeLabel}</p>
+            <div style={{ height: 200 }}>
+              <Line data={{ labels: sessionTrends.labels, datasets: [
+                { label: 'Completed', data: sessionTrends.completed, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.12)', fill: true, tension: 0.35, pointRadius: 3, pointHoverRadius: 5 },
+                { label: 'Confirmed', data: sessionTrends.confirmed, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.10)', fill: true, tension: 0.35, pointRadius: 3, pointHoverRadius: 5 },
+                { label: 'Pending', data: sessionTrends.pending, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.12)', fill: true, tension: 0.35, pointRadius: 3, pointHoverRadius: 5 }
+              ] }} options={lineOptions} />
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent)', margin: 0, fontFamily: 'inherit' }}>{stats?.primaryConcerns?.loneliness || 0}</p>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'inherit' }}>Loneliness</p>
+          </div>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: '16px', border: '1px solid var(--border)' }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>Wellbeing Levels</h3>
+            <div style={{ height: 200 }}>
+              <Pie data={{ labels: ['Good', 'Mild', 'Moderate', 'Severe'], datasets: [{
+                data: [stats?.assessmentsByLevel?.good||0, stats?.assessmentsByLevel?.mild||0, stats?.assessmentsByLevel?.moderate||0, stats?.assessmentsByLevel?.severe||0],
+                backgroundColor: ['#16a34a', '#2563eb', '#f59e0b', '#dc2626'],
+                hoverBackgroundColor: ['#15803d', '#1d4ed8', '#d97706', '#b91c1c'],
+                borderColor: 'var(--bg-card)',
+                borderWidth: 3
+              }]}} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: 'var(--text-primary)' } } } }} />
             </div>
           </div>
         </div>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 20, border: '1px solid var(--border)' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)', fontFamily: 'inherit' }}>Revenue Summary</h3>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ color: 'var(--text-muted)', fontFamily: 'inherit' }}>Platform Fees:</span>
-            <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'inherit' }}>KES {revenueData?.summary?.totalPlatformFees?.toLocaleString() || 0}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ color: 'var(--text-muted)', fontFamily: 'inherit' }}>Professional Earnings:</span>
-            <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'inherit' }}>KES {revenueData?.summary?.totalProfessionalEarnings?.toLocaleString() || 0}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-            <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'inherit' }}>Total Revenue:</span>
-            <span style={{ fontWeight: 700, color: 'var(--accent)', fontFamily: 'inherit' }}>KES {revenueData?.summary?.totalRevenue?.toLocaleString() || 0}</span>
-          </div>
-        </div>
       </div>
 
-      {/* Quote Card */}
-      <div className="dashboard-quote-card">
-        <p className="dashboard-quote-label">Daily reminder</p>
-        <p className="dashboard-quote-text">"A healthy mind is the foundation of a healthy life."</p>
-        <p className="dashboard-quote-author">— Anonymous</p>
-      </div>
-    </div>
+      {/* Footer – full width, flush bottom */}
+      <footer style={{ background: 'var(--bg-card)', borderTop: '3px solid var(--primary)', margin: '40px -32px -24px', padding: '32px 24px 24px', boxShadow: '0 -4px 12px rgba(0,0,0,0.05)', width: 'calc(100% + 64px)' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 32, textAlign: 'center' }}>
+          <div><h4 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>Contact</h4><div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>📞 +254 729 604375</div><div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>✉️ <a href="mailto:kosgeitiffany@gmail.com" style={{ color: 'var(--primary)', textDecoration: 'none' }}>kosgeitiffany@gmail.com</a></div></div>
+          <div><h4 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>Services</h4><ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}><li><a href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 13 }}>Home</a></li><li><a href="/our-story" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 13 }}>Our Story</a></li><li><a href="/careers" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 13 }}>Careers</a></li></ul></div>
+          <div><h4 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>Legal Terms</h4><LegalLinks color="var(--primary)" style={{ fontSize: 13 }} /></div>
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 32, paddingTop: 16, borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12 }}>© 2025 Kaizen Mental Health Platform — A safe space for mental wellness</div>
+      </footer>
+    </>
   );
 }

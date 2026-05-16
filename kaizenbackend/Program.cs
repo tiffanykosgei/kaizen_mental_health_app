@@ -54,6 +54,9 @@ builder.Services.AddSingleton<Google.Apis.Auth.GoogleJsonWebSignature.Validation
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IDailyService, DailyService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<IJournalEncryptionService, JournalEncryptionService>();
+builder.Services.AddHostedService<JournalEncryptionBackfillService>();
 
 // ── KEY FIX: case-insensitive JSON so sessionId == SessionId == SESSIONID ──
 builder.Services.AddControllers()

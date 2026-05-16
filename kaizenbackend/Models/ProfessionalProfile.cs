@@ -27,6 +27,9 @@ namespace kaizenbackend.Models
         public decimal TotalEarnings { get; set; } = 0;
         public decimal PendingPayout { get; set; } = 0;
         public decimal PaidOut { get; set; } = 0;
+        public bool IsAcceptingSessions { get; set; } = true;
+        public DateTime? AvailableFromUtc { get; set; }
+        public DateTime? AvailableUntilUtc { get; set; }
         
         public User User { get; set; } = null!;
     }

@@ -17,5 +17,6 @@ namespace kaizenbackend.Models
         public ClientProfile? ClientProfile { get; set; }
         public ProfessionalProfile? ProfessionalProfile { get; set; }
         public string? ProfilePicture { get; set; }
+        public bool IsActive { get; set; } = true;
     }
 }

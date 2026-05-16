@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/useTheme';
+import { LegalLinks } from './LegalConsent';
 
 const roles = [
   {
@@ -13,7 +14,7 @@ const roles = [
   },
   {
     key: 'Professional',
-    emoji: '👩‍⚕️',
+    emoji: '👩🏾‍⚕️',
     title: 'Professional Portal',
     subtitle: 'Professional Login Here',
     desc: 'Manage client sessions, upload resources and support clients.',
@@ -31,7 +32,7 @@ const roles = [
   }
 ];
 
-export default function LandingPage() {
+export default function PortalSelector() {
   const navigate = useNavigate();
   const { dark, toggleTheme } = useTheme();
 
@@ -164,6 +165,24 @@ export default function LandingPage() {
             </div>
           </div>
         ))}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', marginTop: 2 }}>
+          <LegalLinks color="var(--secondary)" style={{ fontSize: 14 }} modalMaxWidth="980px" />
+        </div>
+      </div>
+
+      {/* Back to Welcome Page Button */}
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '0 24px 40px' }}>
+        <button
+          onClick={() => navigate('/')}
+          style={{
+            padding: '12px 32px', background: 'transparent',
+            border: `2px solid var(--primary)`, borderRadius: 8,
+            color: 'var(--primary)', cursor: 'pointer',
+            fontSize: 16, fontWeight: 500
+          }}
+        >
+          ← Back to Welcome Page
+        </button>
       </div>
 
       <div style={{

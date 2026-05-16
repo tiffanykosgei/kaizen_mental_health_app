@@ -1,8 +1,9 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useTheme } from '../../context/useTheme';
 import { GoogleLogin } from '@react-oauth/google';
 import API from '../../api/axios';
+import { LegalConsentCheckbox } from '../../components/LegalConsent';
 
 export default function RegisterAdmin() {
   const navigate = useNavigate();
@@ -26,8 +27,13 @@ export default function RegisterAdmin() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
 
   const config = { icon: '🛡️', color: '#7c63ff', label: 'Admin' };
+  const phoneRegex = /^(07|01)\d{8}$/;
+  const phoneError = 'Phone number must use the format 0712345678 or 0112345678.';
+  const workEmailRegex = /^\d{4,5}\.\d{4}@students\.ku\.ac\.ke$/i;
+  const workEmailError = 'Use your KU student work email, e.g. 0957.2022@students.ku.ac.ke or 11909.2022@students.ku.ac.ke.';
 
   const validatePassword = (pwd) => ({
     length: pwd.length >= 8,
@@ -52,6 +58,10 @@ export default function RegisterAdmin() {
     
     if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) {
       setErrors({ email: 'Please enter a valid email address.' });
+      return;
+    }
+    if (!workEmailRegex.test(email.trim())) {
+      setErrors({ email: workEmailError });
       return;
     }
     
@@ -115,6 +125,10 @@ export default function RegisterAdmin() {
       const data = response.data;
       
       if (data.requiresPassword) {
+        if (!workEmailRegex.test((data.email || '').trim())) {
+          setErrors({ submit: workEmailError });
+          return;
+        }
         localStorage.setItem('googleEmail', data.email);
         localStorage.setItem('googleFirstName', data.firstName);
         localStorage.setItem('googleLastName', data.lastName);
@@ -140,14 +154,18 @@ export default function RegisterAdmin() {
     e.preventDefault();
     
     const eObj = {};
+    if (!workEmailRegex.test((formData.email || '').trim())) eObj.email = workEmailError;
     if (!formData.firstName.trim()) eObj.firstName = 'First name is required';
     if (!formData.lastName.trim()) eObj.lastName = 'Last name is required';
+    if (!formData.phoneNumber.trim()) eObj.phoneNumber = 'Phone number is required';
+    else if (!phoneRegex.test(formData.phoneNumber.trim())) eObj.phoneNumber = phoneError;
     if (!formData.password) eObj.password = 'Password is required';
     else if (formData.password.length < 8) eObj.password = 'Password must be at least 8 characters';
     else if (!pwdChecks.uppercase) eObj.password = 'Password must include an uppercase letter';
     else if (!pwdChecks.lowercase) eObj.password = 'Password must include a lowercase letter';
     else if (!pwdChecks.special) eObj.password = 'Password must include a special character';
     if (formData.password !== formData.confirmPassword) eObj.confirmPassword = 'Passwords do not match';
+    if (!acceptedLegal) eObj.legal = 'Please accept the Terms of Use and Privacy Policy before creating your account.';
     
     if (Object.keys(eObj).length > 0) {
       setErrors(eObj);
@@ -180,6 +198,10 @@ export default function RegisterAdmin() {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+  };
+
+  const handleEmailSignup = () => {
+    setStep(2);
   };
 
   const inputStyle = (hasError) => ({
@@ -236,7 +258,7 @@ export default function RegisterAdmin() {
             </div>
 
             <button
-              onClick={() => setStep(2)}
+              onClick={handleEmailSignup}
               style={{
                 width: '100%', padding: '14px', fontSize: 15, fontWeight: 600,
                 background: 'transparent', color: config.color,
@@ -263,7 +285,7 @@ export default function RegisterAdmin() {
               <label style={labelStyle}>Email Address</label>
               <input
                 type="email"
-                placeholder="you@example.com"
+                placeholder="11968.2013@students.ku.ac.ke"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={inputStyle(errors.email)}
@@ -387,14 +409,17 @@ export default function RegisterAdmin() {
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Phone Number</label>
+              <label style={labelStyle}>Phone Number *</label>
               <input 
+                type="tel"
                 name="phoneNumber" 
                 placeholder="e.g., 0712345678" 
                 value={formData.phoneNumber} 
                 onChange={handleChange} 
-                style={inputStyle(false)} 
+                maxLength={10}
+                style={inputStyle(errors.phoneNumber)} 
               />
+              {errors.phoneNumber && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.phoneNumber}</p>}
             </div>
 
             <div style={{ marginBottom: 8 }}>
@@ -417,7 +442,7 @@ export default function RegisterAdmin() {
                     color: 'var(--text-muted)', padding: 0, width: 'auto'
                   }}
                 >
-                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                  {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
               {errors.password && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.password}</p>}
@@ -466,11 +491,21 @@ export default function RegisterAdmin() {
                     color: 'var(--text-muted)', padding: 0, width: 'auto'
                   }}
                 >
-                  {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+                  {showConfirmPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
               {errors.confirmPassword && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{errors.confirmPassword}</p>}
             </div>
+
+            <LegalConsentCheckbox
+              checked={acceptedLegal}
+              onChange={(value) => {
+                setAcceptedLegal(value);
+                if (value && errors.legal) setErrors(prev => ({ ...prev, legal: '' }));
+              }}
+              error={errors.legal}
+              color={config.color}
+            />
 
             <button type="submit" disabled={loading}
               style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: config.color, color: 'white', border: 'none', borderRadius: 10, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
@@ -482,3 +517,4 @@ export default function RegisterAdmin() {
     </div>
   );
 }
+

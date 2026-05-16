@@ -20,6 +20,7 @@ namespace kaizenbackend.Data
         public DbSet<PlatformSetting> PlatformSettings { get; set; }
         public DbSet<ResourceRating> ResourceRatings { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; }
+        public DbSet<ProfessionalReport> ProfessionalReports { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -28,19 +29,19 @@ namespace kaizenbackend.Data
                 .HasOne(u => u.ClientProfile)
                 .WithOne(c => c.User)
                 .HasForeignKey<ClientProfile>(c => c.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<User>()
                 .HasOne(u => u.ProfessionalProfile)
                 .WithOne(p => p.User)
                 .HasForeignKey<ProfessionalProfile>(p => p.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<User>()
                 .HasOne<Admin>()
                 .WithOne(a => a.User)
                 .HasForeignKey<Admin>(a => a.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<User>()
                 .HasIndex(u => u.Email)
@@ -51,14 +52,14 @@ namespace kaizenbackend.Data
                .HasMany<SelfAssessment>()
                .WithOne(s => s.User)
                .HasForeignKey(s => s.UserId)
-               .OnDelete(DeleteBehavior.Cascade);
+               .OnDelete(DeleteBehavior.Restrict);
 
             // JournalEntry relationship
             modelBuilder.Entity<User>()
                 .HasMany<JournalEntry>()
                 .WithOne(j => j.User)
                 .HasForeignKey(j => j.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             // Resource relationship
             modelBuilder.Entity<Resource>()
@@ -144,7 +145,7 @@ namespace kaizenbackend.Data
                 .HasOne(r => r.User)
                 .WithMany()
                 .HasForeignKey(r => r.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             // Ensure one user can only rate a resource once
             modelBuilder.Entity<ResourceRating>()
@@ -178,6 +179,18 @@ namespace kaizenbackend.Data
                 .Property(p => p.PaidOut)
                 .HasPrecision(18, 2)
                 .HasDefaultValue(0);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.IsAcceptingSessions)
+                .HasDefaultValue(true);
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.AvailableFromUtc)
+                .HasColumnType("timestamp with time zone");
+
+            modelBuilder.Entity<ProfessionalProfile>()
+                .Property(p => p.AvailableUntilUtc)
+                .HasColumnType("timestamp with time zone");
 
             // Configure string properties with max lengths
             modelBuilder.Entity<ProfessionalProfile>()

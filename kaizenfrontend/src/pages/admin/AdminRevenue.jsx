@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import API from '../../api/axios';
 import StatsCard from './components/StatsCard';
-import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { addReportHeader } from '../../utils/pdfReportBranding';
 
 const PINK = '#e91e8c';
 const PURPLE = '#9c27b0';
@@ -12,7 +12,6 @@ const PINK_LIGHT = 'rgba(233,30,140,0.1)';
 const PURPLE_LIGHT = 'rgba(156,39,176,0.1)';
 
 // Conversion factor: backend uses KES 10, frontend needs KES 1500
-// 1500 / 10 = 150
 const CONVERSION_FACTOR = 150;
 
 export default function AdminRevenue() {
@@ -47,11 +46,6 @@ export default function AdminRevenue() {
     setLoading(true);
     try {
       const response = await API.get('/payment/professional-breakdown');
-      // Convert amounts from backend (based on KES 10) to KES 1500
-      // totalEarned = number of sessions * 900 (60% of 1500)
-      // platformFees = number of sessions * 600 (40% of 1500)
-      // pendingPayout = backend pending * CONVERSION_FACTOR
-      // paidOut = backend paidOut * CONVERSION_FACTOR
       const updatedProfessionals = (response.data.professionals || []).map(pro => ({
         ...pro,
         totalEarned: (pro.totalSessions || 0) * 900,
@@ -79,6 +73,7 @@ export default function AdminRevenue() {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(p => 
+        String(p.professionalId || '').toLowerCase().includes(term) ||
         p.professionalName?.toLowerCase().includes(term) ||
         p.professionalEmail?.toLowerCase().includes(term)
       );
@@ -193,54 +188,27 @@ export default function AdminRevenue() {
       setDownloadLoading(false);
     }
   };
-
-  // Export to Excel
-  const exportToExcel = () => {
-    const exportData = filteredProfessionals.map(p => ({
-      'Professional': p.professionalName,
-      'Email': p.professionalEmail,
-      'Total Sessions': p.totalSessions || 0,
-      'Total Earned (KSh)': (p.totalSessions || 0) * 900,
-      'Platform Fee (KSh)': (p.totalSessions || 0) * 600,
-      'Pending Payout (KSh)': p.pendingPayout || 0,
-      'Paid Out (KSh)': p.paidOut || 0,
-      'Split %': p.currentSplitPercentage || 60,
-      'Payment Method': p.paymentMethod || 'Not set',
-      'Payment Account': p.paymentAccount || 'Not set'
-    }));
-    
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Revenue Report');
-    XLSX.writeFile(wb, `revenue_report_${new Date().toISOString().split('T')[0]}.xlsx`);
-    setShowExportMenu(false);
-  };
-
-  // Export to PDF
   const exportToPDF = () => {
     try {
+      const filtered = filteredProfessionals;
       const doc = new jsPDF('landscape');
+      const hasPendingRows = filteredSummary.totalPendingPayout > 0;
+      const reportTitle = hasPendingFilter === 'has_pending' || (hasPendingFilter === 'all' && hasPendingRows)
+        ? 'Revenue & Payouts Report - Pending Payouts Report'
+        : hasPendingFilter === 'no_pending'
+          ? 'Revenue & Payouts Report - No Pending Payouts Report'
+          : 'Revenue & Payouts Report';
+      const startY = addReportHeader(doc, reportTitle, [
+        `Generated: ${new Date().toLocaleString()}`,
+        `Total Professionals: ${filtered.length}`,
+        `Platform Revenue: ${formatCurrency(filteredSummary.totalPlatformFees)}`,
+        `Professional Payouts: ${formatCurrency(filteredSummary.totalProfessionalEarnings)}`,
+        `Pending Payouts: ${formatCurrency(filteredSummary.totalPendingPayout)}`,
+        `Paid Sessions: ${filteredSummary.totalPaidSessions}`
+      ]);
       
-      doc.setFontSize(18);
-      doc.setTextColor(233, 30, 140);
-      doc.text('Revenue & Payouts Report', 14, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-      doc.text(`Total Professionals: ${filteredProfessionals.length}`, 14, 37);
-      
-      if (summary) {
-        doc.setFontSize(11);
-        doc.setTextColor(0, 0, 0);
-        doc.text(`Platform Revenue: ${formatCurrency(filteredSummary.totalPlatformFees)}`, 14, 50);
-        doc.text(`Professional Payouts: ${formatCurrency(filteredSummary.totalProfessionalEarnings)}`, 14, 58);
-        doc.text(`Paid Sessions: ${filteredSummary.totalPaidSessions}`, 14, 66);
-      }
-      
-      const startY = summary ? 80 : 50;
-      
-      const tableData = filteredProfessionals.map(p => [
+      const tableData = filtered.map(p => [
+        String(p.professionalId || 'N/A'),
         p.professionalName,
         p.totalSessions?.toString() || '0',
         formatCurrency((p.totalSessions || 0) * 900),
@@ -252,12 +220,22 @@ export default function AdminRevenue() {
       
       doc.autoTable({
         startY: startY,
-        head: [['Professional', 'Sessions', 'Total Earned', 'Platform Fee', 'Pending', 'Paid Out', 'Split']],
+        head: [['Professional ID', 'Professional', 'Sessions', 'Total Earned', 'Platform Fee', 'Pending', 'Paid Out', 'Split']],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
-        alternateRowStyles: { fillColor: [245, 245, 245] }
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+        margin: { bottom: 30 }
       });
+      
+      // Footer
+      const finalY = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(9);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Contact: +254 729 604375 | Email: kosgeitiffany@gmail.com', 14, finalY);
+      doc.text('Services: Home | Our Story | Careers', 14, finalY + 5);
+      doc.text('Legal: T&Cs | Privacy Policy', 14, finalY + 10);
+      doc.text('© 2025 Kaizen Mental Health Platform — A safe space for mental wellness', 14, finalY + 15);
       
       doc.save(`revenue_report_${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
@@ -310,7 +288,7 @@ export default function AdminRevenue() {
         <div style={{ flex: 1, minWidth: 180 }}>
           <input
             type="text"
-            placeholder="🔍 Search by name or email..."
+            placeholder="🔍 Search by ID, name or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13 }}
@@ -362,7 +340,6 @@ export default function AdminRevenue() {
           </button>
           {showExportMenu && (
             <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, zIndex: 10 }}>
-              <button onClick={exportToExcel} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📊 Excel</button>
               <button onClick={exportToPDF} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📄 PDF</button>
             </div>
           )}
@@ -388,6 +365,7 @@ export default function AdminRevenue() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Professional ID</th>
                   <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Professional</th>
                   <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Sessions</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Total Earned</th>
@@ -401,6 +379,7 @@ export default function AdminRevenue() {
               <tbody>
                 {filteredProfessionals.map(pro => (
                   <tr key={pro.professionalId} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-primary)' }}>#{pro.professionalId || 'N/A'}</td>
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{pro.professionalName}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{pro.professionalEmail}</div>

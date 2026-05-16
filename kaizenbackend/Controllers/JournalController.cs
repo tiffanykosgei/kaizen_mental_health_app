@@ -5,6 +5,7 @@ using System.Security.Claims;
 using kaizenbackend.Data;
 using kaizenbackend.DTOs;
 using kaizenbackend.Models;
+using kaizenbackend.Services;
 
 namespace kaizenbackend.Controllers
 {
@@ -14,10 +15,12 @@ namespace kaizenbackend.Controllers
     public class JournalController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IJournalEncryptionService _journalEncryption;
 
-        public JournalController(AppDbContext context)
+        public JournalController(AppDbContext context, IJournalEncryptionService journalEncryption)
         {
             _context = context;
+            _journalEncryption = journalEncryption;
         }
 
         [HttpPost]
@@ -35,8 +38,8 @@ namespace kaizenbackend.Controllers
             var entry = new JournalEntry
             {
                 UserId = userId.Value,
-                Title = dto.Title.Trim(),
-                Content = dto.Content.Trim(),
+                Title = _journalEncryption.Encrypt(dto.Title.Trim()),
+                Content = _journalEncryption.Encrypt(dto.Content.Trim()),
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -59,17 +62,35 @@ namespace kaizenbackend.Controllers
             var entries = await _context.JournalEntries
                 .Where(j => j.UserId == userId)
                 .OrderByDescending(j => j.CreatedAt)
-                .Select(j => new
-                {
-                    j.Id,
-                    j.Title,
-                    j.Content,
-                    j.CreatedAt,
-                    j.UpdatedAt
-                })
                 .ToListAsync();
 
-            return Ok(entries);
+            var upgraded = false;
+            foreach (var entry in entries)
+            {
+                if (!_journalEncryption.IsEncrypted(entry.Title))
+                {
+                    entry.Title = _journalEncryption.Encrypt(entry.Title);
+                    upgraded = true;
+                }
+
+                if (!_journalEncryption.IsEncrypted(entry.Content))
+                {
+                    entry.Content = _journalEncryption.Encrypt(entry.Content);
+                    upgraded = true;
+                }
+            }
+
+            if (upgraded)
+                await _context.SaveChangesAsync();
+
+            return Ok(entries.Select(j => new
+            {
+                j.Id,
+                Title = _journalEncryption.Decrypt(j.Title),
+                Content = _journalEncryption.Decrypt(j.Content),
+                j.CreatedAt,
+                j.UpdatedAt
+            }));
         }
 
         [HttpGet("{id}")]
@@ -84,7 +105,14 @@ namespace kaizenbackend.Controllers
             if (entry == null)
                 return NotFound("Journal entry not found.");
 
-            return Ok(entry);
+            return Ok(new
+            {
+                entry.Id,
+                Title = _journalEncryption.Decrypt(entry.Title),
+                Content = _journalEncryption.Decrypt(entry.Content),
+                entry.CreatedAt,
+                entry.UpdatedAt
+            });
         }
 
         [HttpPut("{id}")]
@@ -105,8 +133,8 @@ namespace kaizenbackend.Controllers
             if (string.IsNullOrWhiteSpace(dto.Content))
                 return BadRequest("Content is required.");
 
-            entry.Title = dto.Title.Trim();
-            entry.Content = dto.Content.Trim();
+            entry.Title = _journalEncryption.Encrypt(dto.Title.Trim());
+            entry.Content = _journalEncryption.Encrypt(dto.Content.Trim());
             entry.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();

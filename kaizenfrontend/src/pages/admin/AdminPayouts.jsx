@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import API from '../../api/axios';
-import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { addReportHeader } from '../../utils/pdfReportBranding';
 
 const PINK = '#e91e8c';
 const PURPLE = '#9c27b0';
@@ -11,7 +11,6 @@ const PINK_LIGHT = 'rgba(233,30,140,0.1)';
 const PURPLE_LIGHT = 'rgba(156,39,176,0.1)';
 
 // Conversion factor: backend uses KES 10, frontend needs KES 1500
-// 1500 / 10 = 150
 const CONVERSION_FACTOR = 150;
 
 export default function AdminPayouts() {
@@ -35,10 +34,6 @@ export default function AdminPayouts() {
     setLoading(true);
     try {
       const res = await API.get('/payment/professional-breakdown');
-      // Convert amounts from backend (based on KES 10) to KES 1500
-      // totalEarned = number of sessions * 900 (60% of 1500)
-      // pendingPayout = backend pending * CONVERSION_FACTOR (converts from old system to new)
-      // paidOut = backend paidOut * CONVERSION_FACTOR (converts from old system to new)
       const updatedProfessionals = (res.data.professionals || []).map(pro => ({
         ...pro,
         totalEarned: (pro.totalSessions || 0) * 900,
@@ -59,7 +54,11 @@ export default function AdminPayouts() {
     let filtered = [...professionals];
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(p => p.professionalName.toLowerCase().includes(term) || p.professionalEmail.toLowerCase().includes(term));
+      filtered = filtered.filter(p =>
+        String(p.professionalId || '').toLowerCase().includes(term) ||
+        p.professionalName.toLowerCase().includes(term) ||
+        p.professionalEmail.toLowerCase().includes(term)
+      );
     }
     if (minAmount) filtered = filtered.filter(p => p.pendingPayout >= parseFloat(minAmount));
     if (maxAmount) filtered = filtered.filter(p => p.pendingPayout <= parseFloat(maxAmount));
@@ -173,43 +172,24 @@ export default function AdminPayouts() {
       return false;
     }
   };
-
-  const exportToExcel = () => {
-    const filtered = getFilteredProfessionals();
-    const exportData = filtered.map(p => ({ 
-      'Professional': p.professionalName, 
-      'Email': p.professionalEmail, 
-      'Payment Method': p.paymentMethod || 'Not set', 
-      'Payment Account': p.paymentAccount || 'Not set', 
-      'Total Earned (KSh)': (p.totalSessions || 0) * 900, 
-      'Pending Payout (KSh)': p.pendingPayout || 0, 
-      'Paid Out (KSh)': p.paidOut || 0, 
-      'Total Sessions': p.totalSessions || 0, 
-      'Average Rating': p.averageRating || 0, 
-      'Split %': p.currentSplitPercentage || 60 
-    }));
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Payouts');
-    XLSX.writeFile(wb, `payouts_report_${new Date().toISOString().split('T')[0]}.xlsx`);
-    setShowExportMenu(false);
-  };
-
   const exportToPDF = () => {
     try {
       const filtered = getFilteredProfessionals();
       const doc = new jsPDF('landscape');
-      
-      doc.setFontSize(18);
-      doc.setTextColor(233, 30, 140);
-      doc.text('Professional Payouts Report', 14, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-      doc.text(`Total Professionals: ${filtered.length}`, 14, 37);
+      const pendingTotal = filtered.reduce((sum, p) => sum + (p.pendingPayout || 0), 0);
+      const reportTitle = hasPendingFilter === 'has_pending' || (hasPendingFilter === 'all' && pendingTotal > 0)
+        ? 'Professional Payouts Report - Pending Payouts Report'
+        : hasPendingFilter === 'no_pending'
+          ? 'Professional Payouts Report - No Pending Payouts Report'
+          : 'Professional Payouts Report';
+      const startY = addReportHeader(doc, reportTitle, [
+        `Generated: ${new Date().toLocaleString()}`,
+        `Total Professionals: ${filtered.length}`,
+        `Total Pending Payout: ${formatCurrency(pendingTotal)}`
+      ]);
       
       const tableData = filtered.map(p => [
+        String(p.professionalId || 'N/A'),
         p.professionalName,
         p.professionalEmail,
         p.paymentMethod || 'Not set',
@@ -220,13 +200,23 @@ export default function AdminPayouts() {
       ]);
       
       doc.autoTable({
-        startY: 45,
-        head: [['Professional', 'Email', 'Method', 'Total Earned', 'Pending', 'Paid Out', 'Sessions']],
+        startY,
+        head: [['Professional ID', 'Professional', 'Email', 'Method', 'Total Earned', 'Pending', 'Paid Out', 'Sessions']],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
-        alternateRowStyles: { fillColor: [245, 245, 245] }
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+        margin: { bottom: 30 }
       });
+      
+      // Footer
+      const finalY = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(9);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Contact: +254 729 604375 | Email: kosgeitiffany@gmail.com', 14, finalY);
+      doc.text('Services: Home | Our Story | Careers', 14, finalY + 5);
+      doc.text('Legal: T&Cs | Privacy Policy', 14, finalY + 10);
+      doc.text('© 2025 Kaizen Mental Health Platform — A safe space for mental wellness', 14, finalY + 15);
       
       doc.save(`payouts_report_${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
@@ -379,7 +369,7 @@ export default function AdminPayouts() {
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <input type="text" placeholder="🔍 Search by name or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
+          <input type="text" placeholder="🔍 Search by ID, name or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
         </div>
         <div>
           <input type="number" placeholder="Min Pending (KSh)" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} style={{ width: 120, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
@@ -398,7 +388,6 @@ export default function AdminPayouts() {
           <button onClick={() => setShowExportMenu(!showExportMenu)} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', cursor: 'pointer' }}>📥 Export</button>
           {showExportMenu && (
             <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, zIndex: 10 }}>
-              <button onClick={exportToExcel} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📊 Excel</button>
               <button onClick={exportToPDF} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📄 PDF</button>
             </div>
           )}
@@ -434,6 +423,7 @@ export default function AdminPayouts() {
                 <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                   <div>
                     <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{pro.professionalName}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0' }}>ID: #{pro.professionalId || 'N/A'}</p>
                     <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '2px 0 0' }}>{pro.professionalEmail}</p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

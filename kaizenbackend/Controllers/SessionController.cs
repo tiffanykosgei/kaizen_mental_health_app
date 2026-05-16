@@ -86,13 +86,67 @@ namespace kaizenbackend.Controllers
             }
         }
 
+        private string FormatKenyaDateTime(DateTime utcDateTime)
+        {
+            return TimeZoneInfo.ConvertTimeFromUtc(utcDateTime, _eastAfricaTime)
+                .ToString("dd MMM yyyy, hh:mm tt");
+        }
+
+        private static bool CanCompleteSession(Session session, DateTime nowUtc)
+        {
+            return session.PaymentStatus == "Paid" && session.SessionDate <= nowUtc;
+        }
+
+        private static bool IsInvalidCompletedSession(Session session, DateTime nowUtc)
+        {
+            return session.Status == "Completed" && !CanCompleteSession(session, nowUtc);
+        }
+
+        private string? GetCurrentAvailabilityMessage(ProfessionalProfile? profile)
+        {
+            if (profile == null) return null;
+
+            if (!profile.IsAcceptingSessions)
+                return "Sorry, professional is not currently available.";
+
+            var nowUtc = DateTime.UtcNow;
+            if (profile.AvailableFromUtc.HasValue && nowUtc < profile.AvailableFromUtc.Value)
+                return $"Sorry, professional is not currently available. They will be available from {FormatKenyaDateTime(profile.AvailableFromUtc.Value)}.";
+
+            if (profile.AvailableUntilUtc.HasValue && nowUtc >= profile.AvailableUntilUtc.Value)
+                return "Sorry, professional is not currently available.";
+
+            return null;
+        }
+
+        private static bool IsProfessionalAvailableForSlot(ProfessionalProfile? profile, DateTime slotUtc)
+        {
+            if (profile == null || !profile.IsAcceptingSessions)
+                return false;
+
+            if (profile.AvailableFromUtc.HasValue && slotUtc < profile.AvailableFromUtc.Value)
+                return false;
+
+            if (profile.AvailableUntilUtc.HasValue && slotUtc >= profile.AvailableUntilUtc.Value)
+                return false;
+
+            return true;
+        }
+
         // GET api/session/professionals
         [HttpGet("professionals")]
         public async Task<IActionResult> GetProfessionals()
         {
-            var professionals = await _context.Users
-                .Where(u => u.Role == "Professional")
+            var professionalUsers = await _context.Users
+                .Where(u => u.Role == "Professional"
+                    && u.IsActive
+                    && u.FirstName != "[Deleted]"
+                    && !u.Email.StartsWith("deleted_")
+                    && !u.Email.EndsWith("@deleted.kaizen"))
                 .Include(u => u.ProfessionalProfile)
+                .ToListAsync();
+
+            var professionals = professionalUsers
                 .Select(u => new
                 {
                     u.Id,
@@ -109,10 +163,14 @@ namespace kaizenbackend.Controllers
                         u.ProfessionalProfile.Certifications,
                         u.ProfessionalProfile.LicenseNumber,
                         u.ProfessionalProfile.Experience,
-                        u.ProfessionalProfile.AverageRating
+                        u.ProfessionalProfile.AverageRating,
+                        u.ProfessionalProfile.IsAcceptingSessions,
+                        u.ProfessionalProfile.AvailableFromUtc,
+                        u.ProfessionalProfile.AvailableUntilUtc,
+                        CurrentAvailabilityMessage = GetCurrentAvailabilityMessage(u.ProfessionalProfile)
                     } : null
                 })
-                .ToListAsync();
+                .ToList();
 
             return Ok(professionals);
         }
@@ -123,10 +181,15 @@ namespace kaizenbackend.Controllers
             try
             {
                 var professional = await _context.Users
-                    .FirstOrDefaultAsync(u => u.Id == professionalId && u.Role == "Professional");
+                    .Include(u => u.ProfessionalProfile)
+                    .FirstOrDefaultAsync(u => u.Id == professionalId && u.Role == "Professional" && u.IsActive);
 
                 if (professional == null)
                     return NotFound(new { message = "Professional not found." });
+
+                var currentAvailabilityMessage = GetCurrentAvailabilityMessage(professional.ProfessionalProfile);
+                if (!string.IsNullOrEmpty(currentAvailabilityMessage))
+                    return Ok(new { date = date, availableSlots = new List<object>(), message = currentAvailabilityMessage });
 
                 DateTime kenyaNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _eastAfricaTime);
 
@@ -164,6 +227,15 @@ namespace kaizenbackend.Controllers
                             hour, 0, 0, DateTimeKind.Unspecified);
 
                         DateTime utcSlotTime = TimeZoneInfo.ConvertTimeToUtc(kenyaSlotTime, _eastAfricaTime);
+                        if (kenyaSlotTime <= kenyaNow)
+                            continue;
+
+                        var profile = professional.ProfessionalProfile;
+                        if (profile?.AvailableFromUtc.HasValue == true && utcSlotTime < profile.AvailableFromUtc.Value)
+                            continue;
+
+                        if (profile?.AvailableUntilUtc.HasValue == true && utcSlotTime >= profile.AvailableUntilUtc.Value)
+                            continue;
 
                         string formattedTime = hour switch
                         {
@@ -182,7 +254,17 @@ namespace kaizenbackend.Controllers
                     }
                 }
 
-                return Ok(new { date = targetKenyaDate, availableSlots });
+                var hasAvailabilityWindow = professional.ProfessionalProfile?.AvailableFromUtc.HasValue == true
+                    || professional.ProfessionalProfile?.AvailableUntilUtc.HasValue == true;
+
+                return Ok(new
+                {
+                    date = targetKenyaDate,
+                    availableSlots,
+                    message = hasAvailabilityWindow && availableSlots.Count == 0
+                        ? "Professional not available."
+                        : null
+                });
             }
             catch (Exception ex)
             {
@@ -204,10 +286,22 @@ namespace kaizenbackend.Controllers
                     return Forbid("Only clients can book sessions.");
 
                 var professional = await _context.Users
-                    .FirstOrDefaultAsync(u => u.Id == dto.ProfessionalId && u.Role == "Professional");
+                    .Include(u => u.ProfessionalProfile)
+                    .FirstOrDefaultAsync(u => u.Id == dto.ProfessionalId && u.Role == "Professional" && u.IsActive);
 
                 if (professional == null)
                     return BadRequest("Selected professional not found.");
+
+                var hasUnratedCompletedSession = await _context.Sessions
+                    .Where(s => s.ClientId == clientId && s.Status == "Completed")
+                    .AnyAsync(s => !_context.Ratings.Any(r => r.SessionId == s.Id && r.ClientId == clientId));
+
+                if (hasUnratedCompletedSession)
+                    return BadRequest(new
+                    {
+                        code = "UNRATED_SESSION_REQUIRED",
+                        message = "Please rate your completed session before booking another one."
+                    });
 
                 DateTime utcReceived = dto.SessionDate.ToUniversalTime();
                 DateTime kenyaTime  = TimeZoneInfo.ConvertTimeFromUtc(utcReceived, _eastAfricaTime);
@@ -223,6 +317,17 @@ namespace kaizenbackend.Controllers
                 if (kenyaTime.Date == kenyaNow.Date && kenyaTime <= kenyaNow)
                     return BadRequest("Cannot book sessions in the past.");
 
+                var professionalProfile = professional.ProfessionalProfile;
+                var currentAvailabilityMessage = GetCurrentAvailabilityMessage(professionalProfile);
+                if (!string.IsNullOrEmpty(currentAvailabilityMessage))
+                    return BadRequest(new { message = currentAvailabilityMessage });
+
+                if (professionalProfile?.AvailableFromUtc.HasValue == true && utcReceived < professionalProfile.AvailableFromUtc.Value)
+                    return BadRequest(new { message = "Professional not available." });
+
+                if (professionalProfile?.AvailableUntilUtc.HasValue == true && utcReceived >= professionalProfile.AvailableUntilUtc.Value)
+                    return BadRequest(new { message = "Professional not available." });
+
                 var existingSession = await _context.Sessions
                     .FirstOrDefaultAsync(s => s.ProfessionalId == dto.ProfessionalId
                         && s.SessionDate == utcReceived
@@ -236,7 +341,7 @@ namespace kaizenbackend.Controllers
                     ClientId       = clientId,
                     ProfessionalId = dto.ProfessionalId,
                     SessionDate    = utcReceived,
-                    Status         = "Pending",
+                    Status         = "Confirmed",
                     PaymentStatus  = "Pending",
                     Amount         = 10,
                     Notes          = dto.Notes,
@@ -250,7 +355,7 @@ namespace kaizenbackend.Controllers
 
                 return Ok(new
                 {
-                    message       = "Session booked! Please wait for the professional to confirm, then complete payment.",
+                    message       = "Session booked and confirmed. Please complete payment.",
                     sessionId     = session.Id,
                     amount        = session.Amount,
                     paymentStatus = session.PaymentStatus,
@@ -283,15 +388,21 @@ namespace kaizenbackend.Controllers
                 if (!allowedStatuses.Contains(dto.Status))
                     return BadRequest("Status must be Confirmed, Completed or Cancelled.");
 
-                session.Status    = dto.Status;
-                session.UpdatedAt = DateTime.UtcNow;
+                var nowUtc = DateTime.UtcNow;
+                var requestedStatus = dto.Status;
+                var effectiveStatus = requestedStatus == "Completed" && !CanCompleteSession(session, nowUtc)
+                    ? "Cancelled"
+                    : requestedStatus;
+
+                session.Status    = effectiveStatus;
+                session.UpdatedAt = nowUtc;
 
                 if (dto.Notes != null)
                     session.Notes = dto.Notes;
 
-                _logger.LogInformation($"UpdateStatus: Session {session.Id} → {dto.Status}, PaymentStatus: {session.PaymentStatus}");
+                _logger.LogInformation($"UpdateStatus: Session {session.Id} -> {effectiveStatus}, PaymentStatus: {session.PaymentStatus}");
 
-                if (dto.Status == "Confirmed"
+                if (effectiveStatus == "Confirmed"
                     && session.PaymentStatus == "Paid"
                     && string.IsNullOrEmpty(session.MeetingUrl))
                 {
@@ -303,10 +414,13 @@ namespace kaizenbackend.Controllers
 
                 return Ok(new
                 {
-                    message         = $"Session {dto.Status.ToLower()} successfully.",
+                    message         = requestedStatus == "Completed" && effectiveStatus == "Cancelled"
+                        ? "Session cancelled because payment was not successful or the session has not been conducted."
+                        : $"Session {effectiveStatus.ToLower()} successfully.",
+                    status          = effectiveStatus,
                     meetingUrl      = session.MeetingUrl,
                     meetingRoomName = session.MeetingRoomName,
-                    awaitingPayment = dto.Status == "Confirmed" && session.PaymentStatus != "Paid"
+                    awaitingPayment = effectiveStatus == "Confirmed" && session.PaymentStatus != "Paid"
                 });
             }
             catch (Exception ex)
@@ -369,13 +483,14 @@ namespace kaizenbackend.Controllers
                     query = _context.Sessions
                         .Include(s => s.Professional)
                         .ThenInclude(p => p.ProfessionalProfile)
-                        .Where(s => s.ClientId == userId);
+                        .Where(s => s.ClientId == userId && s.Professional.IsActive);
                 }
                 else if (role == "Professional")
                 {
                     query = _context.Sessions
                         .Include(s => s.Client)
-                        .Where(s => s.ProfessionalId == userId);
+                        .ThenInclude(c => c.ClientProfile)
+                        .Where(s => s.ProfessionalId == userId && s.Client.IsActive);
                 }
                 else return Forbid();
 
@@ -383,7 +498,50 @@ namespace kaizenbackend.Controllers
                     .OrderByDescending(s => s.SessionDate)
                     .ToListAsync();
 
+                var pendingSessions = sessions
+                    .Where(s => s.Status == "Pending" && s.PaymentStatus != "Paid")
+                    .ToList();
+
+                if (pendingSessions.Any())
+                {
+                    var professionalIds = pendingSessions
+                        .Select(s => s.ProfessionalId)
+                        .Distinct()
+                        .ToList();
+
+                    var profiles = await _context.ProfessionalProfiles
+                        .Where(p => professionalIds.Contains(p.UserId))
+                        .ToDictionaryAsync(p => p.UserId);
+
+                    foreach (var pending in pendingSessions)
+                    {
+                        profiles.TryGetValue(pending.ProfessionalId, out var profile);
+                        if (IsProfessionalAvailableForSlot(profile, pending.SessionDate))
+                        {
+                            pending.Status = "Confirmed";
+                            pending.UpdatedAt = DateTime.UtcNow;
+                        }
+                    }
+
+                    if (_context.ChangeTracker.HasChanges())
+                        await _context.SaveChangesAsync();
+                }
+
                 var nowUtc = DateTime.UtcNow;
+                foreach (var session in sessions.Where(s => IsInvalidCompletedSession(s, nowUtc)))
+                {
+                    session.Status = "Cancelled";
+                    session.UpdatedAt = nowUtc;
+                }
+
+                if (_context.ChangeTracker.HasChanges())
+                    await _context.SaveChangesAsync();
+
+                var ratedSessionIds = await _context.Ratings
+                    .Where(r => r.ClientId == userId)
+                    .Select(r => r.SessionId)
+                    .ToListAsync();
+                var ratedSessionIdSet = ratedSessionIds.ToHashSet();
 
                 var result = sessions.Select(s => new
                 {
@@ -397,6 +555,8 @@ namespace kaizenbackend.Controllers
                     s.Notes,
                     s.MeetingUrl,
                     s.MeetingRoomName,
+                    HasRating = ratedSessionIdSet.Contains(s.Id),
+                    CanRate = role == "Client" && s.Status == "Completed" && !ratedSessionIdSet.Contains(s.Id),
                     CanJoin = !string.IsNullOrEmpty(s.MeetingUrl)
                               && s.Status == "Confirmed"
                               && s.PaymentStatus == "Paid"
@@ -410,7 +570,11 @@ namespace kaizenbackend.Controllers
                         ClientFullName  = s.Client.FirstName + " " + s.Client.LastName,
                         ClientFirstName = s.Client.FirstName,
                         ClientLastName  = s.Client.LastName,
-                        s.Client.Email
+                        s.Client.Email,
+                        PhoneNumber = s.Client.PhoneNumber,
+                        EmergencyContactName = s.Client.ClientProfile != null ? s.Client.ClientProfile.EmergencyContact : "",
+                        EmergencyContactPhone = s.Client.ClientProfile != null ? s.Client.ClientProfile.EmergencyContactPhone : "",
+                        EmergencyContactEmail = s.Client.ClientProfile != null ? s.Client.ClientProfile.EmergencyContactEmail : ""
                     } : (object?)null,
                     Professional = role == "Client" ? new
                     {
@@ -492,6 +656,7 @@ namespace kaizenbackend.Controllers
 
                 var session = await _context.Sessions
                     .Include(s => s.Client)
+                    .ThenInclude(c => c.ClientProfile)
                     .Include(s => s.Professional)
                     .ThenInclude(p => p.ProfessionalProfile)
                     .FirstOrDefaultAsync(s => s.Id == id);
@@ -501,6 +666,13 @@ namespace kaizenbackend.Controllers
                 var role = User.FindFirst(ClaimTypes.Role)?.Value;
                 if (session.ClientId != userId && session.ProfessionalId != userId && role != "Admin")
                     return Forbid();
+
+                if (role != "Admin"
+                    && ((role == "Client" && !session.Professional.IsActive)
+                        || (role == "Professional" && !session.Client.IsActive)))
+                {
+                    return NotFound("Session not found.");
+                }
 
                 var nowUtc = DateTime.UtcNow;
 
@@ -531,7 +703,11 @@ namespace kaizenbackend.Controllers
                     {
                         session.Client.Id,
                         ClientFullName  = session.Client.FirstName + " " + session.Client.LastName,
-                        session.Client.Email
+                        session.Client.Email,
+                        PhoneNumber = session.Client.PhoneNumber,
+                        EmergencyContactName = session.Client.ClientProfile?.EmergencyContact ?? "",
+                        EmergencyContactPhone = session.Client.ClientProfile?.EmergencyContactPhone ?? "",
+                        EmergencyContactEmail = session.Client.ClientProfile?.EmergencyContactEmail ?? ""
                     },
                     Professional = new
                     {

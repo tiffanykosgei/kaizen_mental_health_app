@@ -56,7 +56,10 @@ namespace kaizenbackend.Controllers
                     user.ProfessionalProfile.AverageRating,
                     user.ProfessionalProfile.PaymentMethod,
                     user.ProfessionalProfile.PaymentAccount,
-                    user.ProfessionalProfile.ExternalProfileUrl
+                    user.ProfessionalProfile.ExternalProfileUrl,
+                    user.ProfessionalProfile.IsAcceptingSessions,
+                    user.ProfessionalProfile.AvailableFromUtc,
+                    user.ProfessionalProfile.AvailableUntilUtc
                 } : null
             });
         }
@@ -68,9 +71,9 @@ namespace kaizenbackend.Controllers
         {
             try
             {
-                var user = await _context.Users
-                    .Include(u => u.ProfessionalProfile)
-                    .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
+            var user = await _context.Users
+                .Include(u => u.ProfessionalProfile)
+                .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional" && u.IsActive);
 
                 if (user == null)
                     return NotFound(new { message = "Professional not found." });
@@ -90,7 +93,10 @@ namespace kaizenbackend.Controllers
                         certifications     = user.ProfessionalProfile.Certifications ?? "",
                         licenseNumber      = user.ProfessionalProfile.LicenseNumber ?? "",
                         averageRating      = user.ProfessionalProfile.AverageRating,
-                        externalProfileUrl = user.ProfessionalProfile.ExternalProfileUrl ?? ""
+                        externalProfileUrl = user.ProfessionalProfile.ExternalProfileUrl ?? "",
+                        isAcceptingSessions = user.ProfessionalProfile.IsAcceptingSessions,
+                        availableFromUtc = user.ProfessionalProfile.AvailableFromUtc,
+                        availableUntilUtc = user.ProfessionalProfile.AvailableUntilUtc
                     } : null
                 });
             }
@@ -98,6 +104,46 @@ namespace kaizenbackend.Controllers
             {
                 return StatusCode(500, new { message = "Error retrieving profile.", error = ex.Message });
             }
+        }
+
+        // GET: api/professional/client/{clientId}
+        [HttpGet("client/{clientId}")]
+        [Authorize(Roles = "Professional")]
+        public async Task<IActionResult> GetClientProfile(int clientId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userIdClaim == null) return Unauthorized();
+            int professionalId = int.Parse(userIdClaim);
+
+            var hasSessionWithClient = await _context.Sessions
+                .AnyAsync(s => s.ProfessionalId == professionalId
+                    && s.ClientId == clientId
+                    && s.Client.IsActive
+                    && s.Status != "Cancelled");
+
+            if (!hasSessionWithClient)
+                return Forbid("You can only view profiles for clients who have booked a session with you.");
+
+            var client = await _context.Users
+                .Include(u => u.ClientProfile)
+                .FirstOrDefaultAsync(u => u.Id == clientId && u.Role == "Client" && u.IsActive);
+
+            if (client == null)
+                return NotFound(new { message = "Client not found." });
+
+            return Ok(new
+            {
+                id = client.Id,
+                firstName = client.FirstName ?? "",
+                lastName = client.LastName ?? "",
+                fullName = $"{client.FirstName} {client.LastName}".Trim(),
+                email = client.Email ?? "",
+                phoneNumber = client.PhoneNumber ?? "",
+                dateRegistered = client.DateRegistered,
+                emergencyContactName = client.ClientProfile?.EmergencyContact ?? "",
+                emergencyContactPhone = client.ClientProfile?.EmergencyContactPhone ?? "",
+                emergencyContactEmail = client.ClientProfile?.EmergencyContactEmail ?? ""
+            });
         }
 
         // PUT: api/professional/payment-setup
@@ -180,7 +226,7 @@ namespace kaizenbackend.Controllers
             int userId = int.Parse(userIdClaim);
 
             var paidOutSessions = await _context.Sessions
-                .Where(s => s.ProfessionalId == userId && s.PayoutStatus == "PaidOut")
+                .Where(s => s.ProfessionalId == userId && s.PayoutStatus == "PaidOut" && s.Client.IsActive)
                 .OrderByDescending(s => s.UpdatedAt)
                 .Select(s => new
                 {
@@ -225,6 +271,14 @@ namespace kaizenbackend.Controllers
             if (user == null || professional == null)
                 return NotFound("Professional profile not found.");
 
+            if (!dto.ClearAvailabilityWindow
+                && dto.AvailableFromUtc.HasValue
+                && dto.AvailableUntilUtc.HasValue
+                && dto.AvailableUntilUtc.Value.ToUniversalTime() <= dto.AvailableFromUtc.Value.ToUniversalTime())
+            {
+                return BadRequest(new { message = "Availability end time must be after the start time." });
+            }
+
             if (!string.IsNullOrEmpty(dto.FirstName))
                 user.FirstName = dto.FirstName;
             
@@ -255,6 +309,23 @@ namespace kaizenbackend.Controllers
             if (!string.IsNullOrEmpty(dto.LicenseNumber))
                 professional.LicenseNumber = dto.LicenseNumber;
 
+            if (dto.IsAcceptingSessions.HasValue)
+                professional.IsAcceptingSessions = dto.IsAcceptingSessions.Value;
+
+            if (dto.ClearAvailabilityWindow)
+            {
+                professional.AvailableFromUtc = null;
+                professional.AvailableUntilUtc = null;
+            }
+            else
+            {
+                if (dto.AvailableFromUtc.HasValue)
+                    professional.AvailableFromUtc = dto.AvailableFromUtc.Value.ToUniversalTime();
+
+                if (dto.AvailableUntilUtc.HasValue)
+                    professional.AvailableUntilUtc = dto.AvailableUntilUtc.Value.ToUniversalTime();
+            }
+
             await _context.SaveChangesAsync();
 
             return Ok(new 
@@ -270,7 +341,10 @@ namespace kaizenbackend.Controllers
                 experience = professional.Experience,
                 education = professional.Education,
                 certifications = professional.Certifications,
-                licenseNumber = professional.LicenseNumber
+                licenseNumber = professional.LicenseNumber,
+                isAcceptingSessions = professional.IsAcceptingSessions,
+                availableFromUtc = professional.AvailableFromUtc,
+                availableUntilUtc = professional.AvailableUntilUtc
             });
         }
 
@@ -283,7 +357,7 @@ namespace kaizenbackend.Controllers
             int userId = int.Parse(userIdClaim);
 
             var sessions = await _context.Sessions
-                .Where(s => s.ProfessionalId == userId && s.PaymentStatus == "Paid")
+                .Where(s => s.ProfessionalId == userId && s.PaymentStatus == "Paid" && s.Client.IsActive)
                 .OrderByDescending(s => s.SessionDate)
                 .Select(s => new
                 {

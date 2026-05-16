@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import API from '../../api/axios';
 import StatsCard from './components/StatsCard';
-import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { addReportHeader } from '../../utils/pdfReportBranding';
 
 const PINK = '#e91e8c';
 const PURPLE = '#9c27b0';
@@ -25,6 +25,8 @@ export default function AdminSessions() {
 
   useEffect(() => { fetchSessions(); }, []);
 
+  const getEntityId = (entity) => entity?.id ?? entity?.Id ?? null;
+
   const fetchSessions = async () => {
     setLoading(true);
     try {
@@ -35,6 +37,10 @@ export default function AdminSessions() {
         amount: 1500,
         platformFee: 600,
         professionalEarning: 900,
+        clientId: getEntityId(session.client) ?? session.clientId ?? session.ClientId ?? null,
+        clientEmail: session.client?.email ?? session.client?.Email ?? session.clientEmail ?? '',
+        professionalId: getEntityId(session.professional) ?? session.professionalId ?? session.ProfessionalId ?? null,
+        professionalEmail: session.professional?.email ?? session.professional?.Email ?? session.professionalEmail ?? '',
         clientName: getClientName(session),
         professionalName: getProfessionalName(session)
       }));
@@ -157,7 +163,14 @@ export default function AdminSessions() {
     if (filter !== 'all') filtered = filtered.filter(s => s.status === filter);
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(s => s.clientName.toLowerCase().includes(term) || s.professionalName.toLowerCase().includes(term));
+      filtered = filtered.filter(s =>
+        s.clientName.toLowerCase().includes(term) ||
+        s.professionalName.toLowerCase().includes(term) ||
+        (s.clientEmail || '').toLowerCase().includes(term) ||
+        (s.professionalEmail || '').toLowerCase().includes(term) ||
+        String(s.clientId || '').toLowerCase().includes(term) ||
+        String(s.professionalId || '').toLowerCase().includes(term)
+      );
     }
     if (dateRange.start) {
       const startDate = new Date(dateRange.start);
@@ -170,64 +183,61 @@ export default function AdminSessions() {
     }
     return filtered;
   };
-
-  const exportToExcel = () => {
-    const filtered = getFilteredSessions();
-    const exportData = filtered.map(session => ({
-      'Session ID': session.id,
-      'Date': new Date(session.sessionDate).toLocaleString(),
-      'Client': session.clientName,
-      'Professional': session.professionalName,
-      'Status': session.status,
-      'Amount (KSh)': 1500,
-      'Platform Fee (KSh)': 600,
-      'Professional Earnings (KSh)': 900,
-      'Payment Status': session.paymentStatus
-    }));
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Sessions');
-    XLSX.writeFile(wb, `sessions_report_${new Date().toISOString().split('T')[0]}.xlsx`);
-    setShowExportMenu(false);
+  const getReportTitle = () => {
+    const statusPart = filter !== 'all' ? `${filter} Sessions` : 'Sessions';
+    const datePart = dateRange.start && dateRange.end && dateRange.start === dateRange.end
+      ? `on ${new Date(dateRange.start).toLocaleDateString('en-KE', { day: 'numeric', month: 'long', year: 'numeric' })}`
+      : dateRange.start || dateRange.end
+        ? `from ${dateRange.start || 'start'} to ${dateRange.end || 'today'}`
+        : '';
+    return `${statusPart} Report${datePart ? ` ${datePart}` : ''}`;
   };
-
   const exportToPDF = () => {
     try {
       const filtered = getFilteredSessions();
+      const reportTitle = getReportTitle();
       const doc = new jsPDF('landscape');
-      
-      doc.setFontSize(18);
-      doc.setTextColor(233, 30, 140);
-      doc.text('Sessions Report', 14, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-      doc.text(`Total Sessions: ${filtered.length}`, 14, 37);
-      if (filter !== 'all') doc.text(`Status Filter: ${filter}`, 14, 44);
-      
-      const startY = filter !== 'all' ? 52 : 45;
+      const startY = addReportHeader(doc, reportTitle, [
+        `Generated: ${new Date().toLocaleString()}`,
+        `Total Sessions: ${filtered.length}`,
+        filter !== 'all' ? `Status Filter: ${filter}` : ''
+      ]);
+
+      const headers = ['Client ID', 'Professional ID', 'Date', 'Client', 'Professional'];
+      if (filter === 'all') headers.push('Status');
+      headers.push('Amount', 'Payment');
       
       const tableData = filtered.map(session => [
-        session.id.toString(),
+        String(session.clientId || 'N/A'),
+        String(session.professionalId || 'N/A'),
         new Date(session.sessionDate).toLocaleDateString(),
         session.clientName,
         session.professionalName,
-        session.status,
+        ...(filter === 'all' ? [session.status] : []),
         `KSh 1,500`,
         session.paymentStatus
       ]);
       
       doc.autoTable({
         startY: startY,
-        head: [['ID', 'Date', 'Client', 'Professional', 'Status', 'Amount', 'Payment']],
+        head: [headers],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
-        alternateRowStyles: { fillColor: [245, 245, 245] }
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+        margin: { bottom: 30 }
       });
       
-      doc.save(`sessions_report_${new Date().toISOString().split('T')[0]}.pdf`);
+      // Footer
+      const finalY = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(9);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Contact: +254 729 604375 | Email: kosgeitiffany@gmail.com', 14, finalY);
+      doc.text('Services: Home | Our Story | Careers', 14, finalY + 5);
+      doc.text('Legal: T&Cs | Privacy Policy', 14, finalY + 10);
+      doc.text(`Copyright ${new Date().getFullYear()} Kaizen Mental Health Platform - A safe space for mental wellness`, 14, finalY + 15);
+      
+      doc.save(`${reportTitle.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase()}.pdf`);
       setShowExportMenu(false);
       alert('PDF downloaded successfully!');
     } catch (err) {
@@ -296,15 +306,20 @@ export default function AdminSessions() {
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <input type="text" placeholder="🔍 Search by client or professional..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
+          <input type="text" placeholder="🔍 Search by client/professional name, ID or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
         </div>
-        <div><input type="date" placeholder="Start Date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} /></div>
-        <div><input type="date" placeholder="End Date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} /></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Start Date</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>End Date</span>
+        </div>
         <div style={{ position: 'relative' }}>
           <button onClick={() => setShowExportMenu(!showExportMenu)} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', cursor: 'pointer' }}>📥 Export</button>
           {showExportMenu && (
             <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, zIndex: 10 }}>
-              <button onClick={exportToExcel} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📊 Excel</button>
               <button onClick={exportToPDF} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📄 PDF</button>
             </div>
           )}
@@ -330,8 +345,9 @@ export default function AdminSessions() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>ID</th>
+                  <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Client ID</th>
                   <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Client</th>
+                  <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Professional ID</th>
                   <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Professional</th>
                   <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Date & Time</th>
                   <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Amount</th>
@@ -346,8 +362,9 @@ export default function AdminSessions() {
                   const paymentStyle = getPaymentColor(session.paymentStatus);
                   return (
                     <tr key={session.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-primary)' }}>#{session.id}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-primary)' }}>#{session.clientId || 'N/A'}</td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{session.clientName}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-primary)' }}>#{session.professionalId || 'N/A'}</td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{session.professionalName}</td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-secondary)' }}>{formatDate(session.sessionDate)}</td>
                       <td style={{ padding: '14px 16px', textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#e91e8c' }}>KSh 1,500</td>
@@ -374,7 +391,7 @@ export default function AdminSessions() {
         </div>
       </div>
 
-      {/* Receipt Modal */}
+      {/* Receipt Modal – unchanged */}
       {receiptModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={() => setReceiptModal(null)}>
           <div style={{ background: 'var(--bg-card)', borderRadius: 18, maxWidth: 460, width: '100%', border: `1.5px solid ${PINK}`, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>

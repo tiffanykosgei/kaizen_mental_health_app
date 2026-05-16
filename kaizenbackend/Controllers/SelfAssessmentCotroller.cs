@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Net;
 using System.Security.Claims;
 using kaizenbackend.Data;
 using kaizenbackend.DTOs;
 using kaizenbackend.Models;
+using kaizenbackend.Services;
 
 namespace kaizenbackend.Controllers
 {
@@ -14,10 +16,17 @@ namespace kaizenbackend.Controllers
     public class SelfAssessmentController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IEmailService _emailService;
+        private readonly ILogger<SelfAssessmentController> _logger;
 
-        public SelfAssessmentController(AppDbContext context)
+        public SelfAssessmentController(
+            AppDbContext context,
+            IEmailService emailService,
+            ILogger<SelfAssessmentController> logger)
         {
             _context = context;
+            _emailService = emailService;
+            _logger = logger;
         }
 
         // POST: api/selfassessment/submit
@@ -76,6 +85,20 @@ namespace kaizenbackend.Controllers
                          || anxietyLevel    == "Severe"
                          || lonelinessLevel == "Severe";
 
+            bool emergencyContactNotified = false;
+            if (isCrisis)
+                emergencyContactNotified = await NotifyEmergencyContactAsync(
+                    userId,
+                    anxietyScore,
+                    depressionScore,
+                    lonelinessScore,
+                    overallScore,
+                    anxietyLevel,
+                    depressionLevel,
+                    lonelinessLevel,
+                    overallLevel,
+                    primaryConcern);
+
             return Ok(new
             {
                 assessmentId    = assessment.Id,
@@ -94,7 +117,8 @@ namespace kaizenbackend.Controllers
                 disclaimer      = "This assessment is a screening tool only and does not constitute a medical diagnosis. Please consult a qualified mental health professional for clinical advice.",
                 crisisSupport   = isCrisis
                     ? "If you are in crisis or feeling unsafe, please call Befrienders Kenya immediately: 0800 723 253 (free, available 24 hours)"
-                    : null
+                    : null,
+                emergencyContactNotified
             });
         }
 
@@ -135,7 +159,7 @@ namespace kaizenbackend.Controllers
                     s.DepressionLevel,
                     s.LonelinessLevel,
                     s.OverallLevel,
-                    s.Primaryconcern,
+                    primaryConcern = s.Primaryconcern,
                     s.ResultSummary
                 })
                 .ToListAsync();
@@ -154,7 +178,10 @@ namespace kaizenbackend.Controllers
 
             // Check if professional has a session with this client
             var hasSession = await _context.Sessions
-                .AnyAsync(s => s.ClientId == clientId && s.ProfessionalId == professionalId);
+                .AnyAsync(s => s.ClientId == clientId
+                    && s.ProfessionalId == professionalId
+                    && s.Client.IsActive
+                    && s.Status != "Cancelled");
 
             if (!hasSession)
             {
@@ -162,9 +189,12 @@ namespace kaizenbackend.Controllers
             }
 
             var client = await _context.Users
-                .Where(u => u.Id == clientId)
+                .Where(u => u.Id == clientId && u.Role == "Client" && u.IsActive)
                 .Select(u => new { u.FirstName, u.LastName, u.Email })
                 .FirstOrDefaultAsync();
+
+            if (client == null)
+                return NotFound(new { message = "Client not found." });
 
             var assessments = await _context.SelfAssessments
                 .Where(s => s.UserId == clientId)
@@ -210,7 +240,6 @@ namespace kaizenbackend.Controllers
                 .Select(s => new
                 {
                     s.Id,
-                    s.UserId,
                     s.DateCompleted,
                     s.AnxietyScore,
                     s.DepressionScore,
@@ -220,13 +249,12 @@ namespace kaizenbackend.Controllers
                     s.DepressionLevel,
                     s.LonelinessLevel,
                     s.OverallLevel,
-                    s.Primaryconcern,
+                    primaryConcern = s.Primaryconcern,
                     s.ResultSummary,
                     User = new
                     {
-                        s.User.Id,
-                        FullName = s.User.FirstName + " " + s.User.LastName,
-                        s.User.Email
+                        FullName = "User Undefined",
+                        Email = ""
                     }
                 })
                 .ToListAsync();
@@ -256,7 +284,7 @@ namespace kaizenbackend.Controllers
             // Up to 4 exact-category matches, sorted by rating then date
             var exact = await _context.Resources
                 .Include(r => r.Uploader)
-                .Where(r => r.Category.ToLower() == primaryConcern.ToLower())
+                .Where(r => r.IsActive && r.Uploader.IsActive && r.Category.ToLower() == primaryConcern.ToLower())
                 .OrderByDescending(r => r.AverageRating)
                 .ThenByDescending(r => r.DateUploaded)
                 .Take(4)
@@ -271,7 +299,7 @@ namespace kaizenbackend.Controllers
                 var excludeIds = exact.Select(r => r.Id).ToList();
                 general = await _context.Resources
                     .Include(r => r.Uploader)
-                    .Where(r => r.Category.ToLower() == "general" && !excludeIds.Contains(r.Id))
+                    .Where(r => r.IsActive && r.Uploader.IsActive && r.Category.ToLower() == "general" && !excludeIds.Contains(r.Id))
                     .OrderByDescending(r => r.AverageRating)
                     .ThenByDescending(r => r.DateUploaded)
                     .Take(remaining)
@@ -295,6 +323,66 @@ namespace kaizenbackend.Controllers
                 totalRatings  = r.TotalRatings,
                 isExactMatch  = r.Category?.ToLower() == primaryConcern.ToLower()
             }).ToList();
+        }
+
+        private async Task<bool> NotifyEmergencyContactAsync(
+            int userId,
+            double anxietyScore,
+            double depressionScore,
+            double lonelinessScore,
+            double overallScore,
+            string anxietyLevel,
+            string depressionLevel,
+            string lonelinessLevel,
+            string overallLevel,
+            string primaryConcern)
+        {
+            try
+            {
+                var client = await _context.Users
+                    .Include(u => u.ClientProfile)
+                    .FirstOrDefaultAsync(u => u.Id == userId && u.Role == "Client" && u.IsActive);
+
+                var emergencyEmail = client?.ClientProfile?.EmergencyContactEmail;
+                if (string.IsNullOrWhiteSpace(emergencyEmail))
+                {
+                    _logger.LogWarning("Severe assessment for user {UserId} had no emergency contact email.", userId);
+                    return false;
+                }
+
+                var clientName = $"{client!.FirstName} {client.LastName}".Trim();
+                if (string.IsNullOrWhiteSpace(clientName)) clientName = "A Kaizen client";
+
+                var contactName = client.ClientProfile?.EmergencyContact;
+                if (string.IsNullOrWhiteSpace(contactName)) contactName = "there";
+
+                string subject = "Kaizen severe assessment alert";
+                string body = $@"
+                    <h2>Severe assessment result alert</h2>
+                    <p>Hello {WebUtility.HtmlEncode(contactName)},</p>
+                    <p>{WebUtility.HtmlEncode(clientName)} listed you as their emergency contact on Kaizen.</p>
+                    <p>Their latest wellbeing assessment returned a <strong>severe</strong> result.</p>
+                    <table cellpadding=""6"" cellspacing=""0"" style=""border-collapse:collapse;"">
+                        <tr><td><strong>Overall</strong></td><td>{overallScore} ({WebUtility.HtmlEncode(overallLevel)})</td></tr>
+                        <tr><td><strong>Anxiety</strong></td><td>{anxietyScore} ({WebUtility.HtmlEncode(anxietyLevel)})</td></tr>
+                        <tr><td><strong>Depression</strong></td><td>{depressionScore} ({WebUtility.HtmlEncode(depressionLevel)})</td></tr>
+                        <tr><td><strong>Loneliness</strong></td><td>{lonelinessScore} ({WebUtility.HtmlEncode(lonelinessLevel)})</td></tr>
+                        <tr><td><strong>Primary concern</strong></td><td>{WebUtility.HtmlEncode(primaryConcern)}</td></tr>
+                    </table>
+                    <p>Please check in with them as soon as possible. If there is immediate risk, contact local emergency services or Befrienders Kenya at 0800 723 253.</p>
+                    <p>This email is an automated safety notification from Kaizen.</p>";
+
+                var sent = await _emailService.SendEmailAsync(emergencyEmail, subject, body, true);
+                if (!sent)
+                    _logger.LogWarning("Emergency contact email was not sent to {Email} for user {UserId}.", emergencyEmail, userId);
+
+                return sent;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to notify emergency contact for severe assessment by user {UserId}", userId);
+                return false;
+            }
         }
 
         private static string GetIconForCategory(string category) => category?.ToLower() switch

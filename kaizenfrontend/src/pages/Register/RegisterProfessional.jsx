@@ -1,8 +1,9 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useTheme } from '../../context/useTheme';
 import { GoogleLogin } from '@react-oauth/google';
 import API from '../../api/axios';
+import { LegalConsentCheckbox } from '../../components/LegalConsent';
 
 export default function RegisterProfessional() {
   const navigate = useNavigate();
@@ -30,8 +31,13 @@ export default function RegisterProfessional() {
   const [loading,             setLoading]             = useState(false);
   const [showPassword,        setShowPassword]        = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [acceptedLegal,       setAcceptedLegal]       = useState(false);
 
-  const config = { icon: '👩‍⚕️', color: '#9c27b0', label: 'Professional' };
+  const config = { icon: '👩🏾‍⚕️', color: '#9c27b0', label: 'Professional' };
+  const phoneRegex = /^(07|01)\d{8}$/;
+  const phoneError = 'Phone number must use the format 0712345678 or 0112345678.';
+  const workEmailRegex = /^\d{4,5}\.\d{4}@students\.ku\.ac\.ke$/i;
+  const workEmailError = 'Use your KU student work email, e.g. 0957.2022@students.ku.ac.ke or 11909.2022@students.ku.ac.ke.';
 
   const isValidUrl = (url) => {
     if (!url) return true; // empty is ok — field is optional
@@ -63,6 +69,10 @@ export default function RegisterProfessional() {
     e.preventDefault();
     if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) {
       setErrors({ email: 'Please enter a valid email address.' });
+      return;
+    }
+    if (!workEmailRegex.test(email.trim())) {
+      setErrors({ email: workEmailError });
       return;
     }
     setLoading(true);
@@ -113,6 +123,10 @@ export default function RegisterProfessional() {
       });
       const data = response.data;
       if (data.requiresPassword) {
+        if (!workEmailRegex.test((data.email || '').trim())) {
+          setErrors({ submit: workEmailError });
+          return;
+        }
         localStorage.setItem('googleEmail',     data.email);
         localStorage.setItem('googleFirstName', data.firstName);
         localStorage.setItem('googleLastName',  data.lastName);
@@ -139,9 +153,11 @@ export default function RegisterProfessional() {
     const eObj = {};
 
     // Personal
+    if (!workEmailRegex.test((formData.email || '').trim())) eObj.email = workEmailError;
     if (!formData.firstName.trim())  eObj.firstName = 'First name is required.';
     if (!formData.lastName.trim())   eObj.lastName  = 'Last name is required.';
     if (!formData.phoneNumber.trim()) eObj.phoneNumber = 'Phone number is required.';
+    else if (!phoneRegex.test(formData.phoneNumber.trim())) eObj.phoneNumber = phoneError;
 
     // Password
     if (!formData.password)                eObj.password = 'Password is required.';
@@ -162,6 +178,7 @@ export default function RegisterProfessional() {
     // URL is optional but must be valid if provided
     if (formData.externalProfileUrl && !isValidUrl(formData.externalProfileUrl))
       eObj.externalProfileUrl = 'Please enter a valid URL (e.g. https://linkedin.com/in/yourprofile).';
+    if (!acceptedLegal) eObj.legal = 'Please accept the Terms of Use and Privacy Policy before creating your account.';
 
     if (Object.keys(eObj).length > 0) {
       setErrors(eObj);
@@ -198,6 +215,10 @@ export default function RegisterProfessional() {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+  };
+
+  const handleEmailSignup = () => {
+    setStep(2);
   };
 
   // ── shared styles ──────────────────────────────────────────────────────────
@@ -256,7 +277,7 @@ export default function RegisterProfessional() {
               <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             </div>
 
-            <button onClick={() => setStep(2)}
+            <button onClick={handleEmailSignup}
               style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: 'transparent', color: config.color, border: `2px solid ${config.color}`, borderRadius: 10, cursor: 'pointer' }}>
               Sign up with Email
             </button>
@@ -273,7 +294,7 @@ export default function RegisterProfessional() {
           <form onSubmit={handleSendCode}>
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Email Address{requiredMark}</label>
-              <input type="email" placeholder="you@gmail.com" value={email}
+              <input type="email" placeholder="11968.2013@students.ku.ac.ke" value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={inputStyle(errors.email)} required autoFocus />
               {errText('email')}
@@ -356,8 +377,8 @@ export default function RegisterProfessional() {
 
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Phone Number{requiredMark}</label>
-              <input name="phoneNumber" placeholder="e.g., 0712345678" value={formData.phoneNumber}
-                onChange={handleChange} style={inputStyle(errors.phoneNumber)} />
+              <input type="tel" name="phoneNumber" placeholder="e.g., 0712345678" value={formData.phoneNumber}
+                onChange={handleChange} maxLength={10} style={inputStyle(errors.phoneNumber)} />
               {errText('phoneNumber')}
             </div>
 
@@ -450,7 +471,7 @@ export default function RegisterProfessional() {
                   onChange={handleChange} style={{ ...inputStyle(errors.password), paddingRight: 44 }} />
                 <button type="button" onClick={() => setShowPassword(v => !v)}
                   style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17, color: 'var(--text-muted)', padding: 0, width: 'auto' }}>
-                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                  {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
               {errText('password')}
@@ -482,11 +503,21 @@ export default function RegisterProfessional() {
                   onChange={handleChange} style={{ ...inputStyle(errors.confirmPassword), paddingRight: 44 }} />
                 <button type="button" onClick={() => setShowConfirmPassword(v => !v)}
                   style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17, color: 'var(--text-muted)', padding: 0, width: 'auto' }}>
-                  {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+                  {showConfirmPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
               {errText('confirmPassword')}
             </div>
+
+            <LegalConsentCheckbox
+              checked={acceptedLegal}
+              onChange={(value) => {
+                setAcceptedLegal(value);
+                if (value && errors.legal) setErrors(prev => ({ ...prev, legal: '' }));
+              }}
+              error={errors.legal}
+              color={config.color}
+            />
 
             <button type="submit" disabled={loading}
               style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: config.color, color: 'white', border: 'none', borderRadius: 10, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
@@ -498,3 +529,4 @@ export default function RegisterProfessional() {
     </div>
   );
 }
+

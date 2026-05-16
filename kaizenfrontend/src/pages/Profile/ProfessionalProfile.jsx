@@ -6,7 +6,8 @@ export default function ProfessionalProfile() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [success] = useState('');
+  const [success, setSuccess] = useState('');
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [profilePicturePreview, setProfilePicturePreview] = useState('');
   const [user, setUser] = useState({
     firstName: '',
@@ -24,7 +25,11 @@ export default function ProfessionalProfile() {
     education: '',
     certifications: '',
     licenseNumber: '',
-    externalProfileUrl: ''
+    externalProfileUrl: '',
+    isAcceptingSessions: true,
+    useAvailabilityWindow: false,
+    availableFromLocal: '',
+    availableUntilLocal: ''
   });
   
   // Delete account states
@@ -62,9 +67,12 @@ export default function ProfessionalProfile() {
       } else {
         setProfilePicturePreview('');
       }
+      setIsGoogleUser(Boolean(userData.isGoogleUser));
       
       if (userData.professionalProfile) {
         const prof = userData.professionalProfile;
+        // NEW: Load availability window correctly
+        const hasWindow = !!(prof.availableFromUtc || prof.availableUntilUtc);
         setProfessionalProfile({
           bio: prof.bio || '',
           specialization: prof.specialization || '',
@@ -72,7 +80,11 @@ export default function ProfessionalProfile() {
           education: prof.education || '',
           certifications: prof.certifications || '',
           licenseNumber: prof.licenseNumber || '',
-          externalProfileUrl: prof.externalProfileUrl || ''
+          externalProfileUrl: prof.externalProfileUrl || '',
+          isAcceptingSessions: prof.isAcceptingSessions !== false,
+          useAvailabilityWindow: hasWindow,
+          availableFromLocal: toDateTimeLocalValue(prof.availableFromUtc),
+          availableUntilLocal: toDateTimeLocalValue(prof.availableUntilUtc)
         });
       }
     } catch (err) {
@@ -85,6 +97,11 @@ export default function ProfessionalProfile() {
   };
 
   const handleDeleteAccount = async () => {
+    if (!isGoogleUser && !deletePassword.trim()) {
+      setError('Please enter your password to delete your account.');
+      return;
+    }
+
     setDeleting(true);
     setError('');
     
@@ -95,7 +112,11 @@ export default function ProfessionalProfile() {
       localStorage.clear();
       navigate('/', { state: { message: 'Your account has been deleted successfully.' } });
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete account');
+      const data = err.response?.data;
+      const validationMessage = data?.errors
+        ? Object.values(data.errors).flat().join(' ')
+        : '';
+      setError(data?.message || validationMessage || (typeof data === 'string' ? data : '') || 'Failed to delete account');
       setDeleting(false);
     }
   };
@@ -116,6 +137,58 @@ export default function ProfessionalProfile() {
   const ensureHttp = (url) => {
     if (!url) return '#';
     return url.startsWith('http') ? url : `https://${url}`;
+  };
+
+  const toDateTimeLocalValue = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  };
+
+  const toUtcIso = (value) => value ? new Date(value).toISOString() : null;
+
+  const formatAvailability = () => {
+    if (!professionalProfile.isAcceptingSessions) return 'Not accepting session bookings';
+    if (!professionalProfile.useAvailabilityWindow) return 'Accepting bookings during standard session hours';
+    const from = professionalProfile.availableFromLocal ? new Date(professionalProfile.availableFromLocal).toLocaleString('en-KE') : 'not set';
+    const until = professionalProfile.availableUntilLocal ? new Date(professionalProfile.availableUntilLocal).toLocaleString('en-KE') : 'not set';
+    return `Available from ${from} until ${until}`;
+  };
+
+  // NEW: Refetch profile after save to ensure UI reflects backend state
+  const saveAvailability = async () => {
+    if (professionalProfile.useAvailabilityWindow) {
+      if (!professionalProfile.availableFromLocal || !professionalProfile.availableUntilLocal) {
+        setError('Please choose both availability start and end times.');
+        return;
+      }
+      if (new Date(professionalProfile.availableUntilLocal) <= new Date(professionalProfile.availableFromLocal)) {
+        setError('Availability end time must be after the start time.');
+        return;
+      }
+    }
+
+    setAvailabilitySaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await API.put('/auth/update-profile', {
+        isAcceptingSessions: professionalProfile.isAcceptingSessions,
+        availableFromUtc: professionalProfile.useAvailabilityWindow ? toUtcIso(professionalProfile.availableFromLocal) : null,
+        availableUntilUtc: professionalProfile.useAvailabilityWindow ? toUtcIso(professionalProfile.availableUntilLocal) : null,
+        clearAvailabilityWindow: !professionalProfile.useAvailabilityWindow
+      });
+      setSuccess('Availability updated successfully.');
+      // NEW: Immediately refetch profile to ensure local state matches backend
+      await fetchProfile();
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update availability.');
+    } finally {
+      setAvailabilitySaving(false);
+    }
   };
 
   if (loading) {
@@ -291,6 +364,97 @@ export default function ProfessionalProfile() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Availability Card */}
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: 20,
+        border: '1px solid var(--border)',
+        padding: 28,
+        marginBottom: 24,
+        boxShadow: 'var(--shadow-sm)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
+          <div>
+            <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+              Session Availability
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 0' }}>
+              {formatAvailability()}
+            </p>
+          </div>
+          <span style={{
+            padding: '6px 12px',
+            borderRadius: 20,
+            fontSize: 12,
+            fontWeight: 700,
+            background: professionalProfile.isAcceptingSessions ? 'rgba(46,125,50,0.12)' : 'rgba(211,47,47,0.12)',
+            color: professionalProfile.isAcceptingSessions ? '#2e7d32' : '#d32f2f'
+          }}>
+            {professionalProfile.isAcceptingSessions ? 'Available' : 'Unavailable'}
+          </span>
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-primary)', fontSize: 14, fontWeight: 600, marginBottom: 14 }}>
+          <input
+            type="checkbox"
+            checked={professionalProfile.isAcceptingSessions}
+            onChange={e => setProfessionalProfile({ ...professionalProfile, isAcceptingSessions: e.target.checked })}
+            style={{ accentColor: '#e91e8c' }}
+          />
+          Accept session bookings
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-primary)', fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+          <input
+            type="checkbox"
+            checked={professionalProfile.useAvailabilityWindow}
+            onChange={e => setProfessionalProfile({ ...professionalProfile, useAvailabilityWindow: e.target.checked })}
+            style={{ accentColor: '#9c27b0' }}
+          />
+          Limit bookings to a specific date and time window
+        </label>
+
+        {professionalProfile.useAvailabilityWindow && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 18 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Available From</label>
+              <input
+                type="datetime-local"
+                value={professionalProfile.availableFromLocal}
+                onChange={e => setProfessionalProfile({ ...professionalProfile, availableFromLocal: e.target.value })}
+                style={{ width: '100%', padding: '12px 14px', border: '1.5px solid var(--border)', borderRadius: 10, background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Available Until</label>
+              <input
+                type="datetime-local"
+                value={professionalProfile.availableUntilLocal}
+                onChange={e => setProfessionalProfile({ ...professionalProfile, availableUntilLocal: e.target.value })}
+                style={{ width: '100%', padding: '12px 14px', border: '1.5px solid var(--border)', borderRadius: 10, background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              />
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={saveAvailability}
+          disabled={availabilitySaving}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderRadius: 10,
+            background: 'linear-gradient(135deg, #e91e8c, #9c27b0)',
+            color: 'white',
+            fontWeight: 700,
+            cursor: availabilitySaving ? 'not-allowed' : 'pointer',
+            opacity: availabilitySaving ? 0.65 : 1
+          }}
+        >
+          {availabilitySaving ? 'Saving...' : 'Save Availability'}
+        </button>
       </div>
 
       {/* Professional Information Card - UNIFIED VIEW with ALL professional information */}

@@ -49,14 +49,6 @@ namespace kaizenbackend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CurrentMedications")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Diagnoses")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("EmergencyContact")
                         .IsRequired()
                         .HasColumnType("text");
@@ -65,16 +57,9 @@ namespace kaizenbackend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("KnownTriggers")
+                    b.Property<string>("EmergencyContactEmail")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<string>("MedicalNotes")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("PreviousTherapy")
-                        .HasColumnType("boolean");
 
                     b.Property<int>("UserId")
                         .HasColumnType("integer");
@@ -179,7 +164,7 @@ namespace kaizenbackend.Migrations
                             Id = 1,
                             DefaultPlatformPercentage = 40,
                             DefaultProfessionalPercentage = 60,
-                            UpdatedAt = new DateTime(2026, 4, 23, 6, 47, 49, 915, DateTimeKind.Utc).AddTicks(6752)
+                            UpdatedAt = new DateTime(2026, 5, 13, 5, 34, 50, 166, DateTimeKind.Utc).AddTicks(3144)
                         });
                 });
 
@@ -190,6 +175,12 @@ namespace kaizenbackend.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AvailableFromUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("AvailableUntilUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("AverageRating")
                         .ValueGeneratedOnAdd()
@@ -222,6 +213,11 @@ namespace kaizenbackend.Migrations
 
                     b.Property<string>("ExternalProfileUrl")
                         .HasColumnType("text");
+
+                    b.Property<bool>("IsAcceptingSessions")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("LicenseNumber")
                         .IsRequired()
@@ -281,6 +277,41 @@ namespace kaizenbackend.Migrations
                         .IsUnique();
 
                     b.ToTable("ProfessionalProfiles");
+                });
+
+            modelBuilder.Entity("kaizenbackend.Models.ProfessionalReport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ClientId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Complaint")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ProfessionalId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("ProfessionalId");
+
+                    b.ToTable("ProfessionalReports");
                 });
 
             modelBuilder.Entity("kaizenbackend.Models.Rating", b =>
@@ -344,6 +375,9 @@ namespace kaizenbackend.Migrations
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -589,6 +623,9 @@ namespace kaizenbackend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -620,7 +657,7 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithOne()
                         .HasForeignKey("kaizenbackend.Models.Admin", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("User");
@@ -631,7 +668,7 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithOne("ClientProfile")
                         .HasForeignKey("kaizenbackend.Models.ClientProfile", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("User");
@@ -642,7 +679,7 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("User");
@@ -653,10 +690,29 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithOne("ProfessionalProfile")
                         .HasForeignKey("kaizenbackend.Models.ProfessionalProfile", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("kaizenbackend.Models.ProfessionalReport", b =>
+                {
+                    b.HasOne("kaizenbackend.Models.User", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("kaizenbackend.Models.User", "Professional")
+                        .WithMany()
+                        .HasForeignKey("ProfessionalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Professional");
                 });
 
             modelBuilder.Entity("kaizenbackend.Models.Rating", b =>
@@ -708,7 +764,7 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Resource");
@@ -721,7 +777,7 @@ namespace kaizenbackend.Migrations
                     b.HasOne("kaizenbackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("User");

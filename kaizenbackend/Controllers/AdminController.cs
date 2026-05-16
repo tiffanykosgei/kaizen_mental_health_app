@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Net;
 using System.Security.Claims;
 using kaizenbackend.Data;
 using kaizenbackend.Models;
+using kaizenbackend.Services;
 
 namespace kaizenbackend.Controllers
 {
@@ -13,10 +15,12 @@ namespace kaizenbackend.Controllers
     public class AdminController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IEmailService _emailService;
 
-        public AdminController(AppDbContext context)
+        public AdminController(AppDbContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         private bool IsAdmin()
@@ -60,15 +64,15 @@ namespace kaizenbackend.Controllers
 
             var assessmentsByLevel = new
             {
-                good     = await _context.SelfAssessments.CountAsync(a => a.OverallLevel == "Good"),
-                mild     = await _context.SelfAssessments.CountAsync(a => a.OverallLevel == "Mild"),
+                good = await _context.SelfAssessments.CountAsync(a => a.OverallLevel == "Good"),
+                mild = await _context.SelfAssessments.CountAsync(a => a.OverallLevel == "Mild"),
                 moderate = await _context.SelfAssessments.CountAsync(a => a.OverallLevel == "Moderate"),
-                severe   = await _context.SelfAssessments.CountAsync(a => a.OverallLevel == "Severe"),
+                severe = await _context.SelfAssessments.CountAsync(a => a.OverallLevel == "Severe"),
             };
 
             var primaryConcerns = new
             {
-                anxiety    = await _context.SelfAssessments.CountAsync(a => a.Primaryconcern == "Anxiety"),
+                anxiety = await _context.SelfAssessments.CountAsync(a => a.Primaryconcern == "Anxiety"),
                 depression = await _context.SelfAssessments.CountAsync(a => a.Primaryconcern == "Depression"),
                 loneliness = await _context.SelfAssessments.CountAsync(a => a.Primaryconcern == "Loneliness"),
             };
@@ -83,7 +87,7 @@ namespace kaizenbackend.Controllers
                 totalRevenue,
                 sessions = new
                 {
-                    pending   = pendingSessions,
+                    pending = pendingSessions,
                     confirmed = confirmedSessions,
                     completed = completedSessions,
                     cancelled = cancelledSessions
@@ -112,10 +116,12 @@ namespace kaizenbackend.Controllers
                     u.Role,
                     u.DateRegistered,
                     u.PhoneNumber,
+                    u.IsActive,
                     profile = u.ProfessionalProfile != null ? new
                     {
                         u.ProfessionalProfile.Bio,
-                        u.ProfessionalProfile.Specialization
+                        u.ProfessionalProfile.Specialization,
+                        u.ProfessionalProfile.ExternalProfileUrl
                     } : null
                 })
                 .ToListAsync();
@@ -143,11 +149,6 @@ namespace kaizenbackend.Controllers
                 professionalProfile = await _context.ProfessionalProfiles
                     .FirstOrDefaultAsync(p => p.UserId == id);
 
-                Console.WriteLine($"=== DEBUG: Professional ID {id} ===");
-                Console.WriteLine($"PaymentMethod from DB: '{professionalProfile?.PaymentMethod}'");
-                Console.WriteLine($"PaymentAccount from DB: '{professionalProfile?.PaymentAccount}'");
-                Console.WriteLine($"Bio from DB: '{professionalProfile?.Bio}'");
-
                 currentSplitPercentage = professionalProfile?.CustomSplitPercentage ??
                     (professionalProfile?.AverageRating > 0
                         ? GetPercentageFromRating(professionalProfile.AverageRating)
@@ -164,6 +165,8 @@ namespace kaizenbackend.Controllers
                 user.Role,
                 user.DateRegistered,
                 user.PhoneNumber,
+                user.IsActive,
+                user.ProfilePicture,
                 professionalProfile = professionalProfile != null ? new
                 {
                     professionalProfile.Bio,
@@ -179,9 +182,58 @@ namespace kaizenbackend.Controllers
                 } : null
             };
 
-            Console.WriteLine($"Response professionalProfile: {System.Text.Json.JsonSerializer.Serialize(response.professionalProfile)}");
-
             return Ok(response);
+        }
+
+        // NEW: Deactivate user (soft delete)
+        [HttpPut("users/{id}/deactivate")]
+        public async Task<IActionResult> DeactivateUser(int id)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+                return NotFound(new { message = "User not found." });
+
+            if (user.Role == "Admin")
+                return BadRequest(new { message = "Cannot deactivate an admin account." });
+
+            if (!user.IsActive)
+                return BadRequest(new { message = "User is already deactivated." });
+
+            user.IsActive = false;
+            await _context.SaveChangesAsync();
+
+            await SendAccountStatusEmailAsync(
+                user,
+                "Your Kaizen account has been deactivated",
+                "Your Kaizen account has been deactivated by an administrator. You can no longer log in unless an admin reactivates your account.");
+
+            return Ok(new { message = $"{user.FirstName} {user.LastName} has been deactivated. They can no longer log in." });
+        }
+
+        // NEW: Reactivate user
+        [HttpPut("users/{id}/reactivate")]
+        public async Task<IActionResult> ReactivateUser(int id)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+                return NotFound(new { message = "User not found." });
+
+            if (user.IsActive)
+                return BadRequest(new { message = "User is already active." });
+
+            user.IsActive = true;
+            await _context.SaveChangesAsync();
+
+            await SendAccountStatusEmailAsync(
+                user,
+                "Your Kaizen account has been reactivated",
+                "Your Kaizen account has been reactivated. You can now log in again using your account credentials.");
+
+            return Ok(new { message = $"{user.FirstName} {user.LastName} has been reactivated." });
         }
 
         // GET: api/admin/users/{id}/sessions
@@ -211,6 +263,7 @@ namespace kaizenbackend.Controllers
                         s.ProfessionalEarnings,
                         s.PlatformFee,
                         s.Notes,
+                        clientId = s.Client.Id,
                         clientName = s.Client.FirstName + " " + s.Client.LastName,
                         clientEmail = s.Client.Email,
                         clientFirstName = s.Client.FirstName,
@@ -234,6 +287,7 @@ namespace kaizenbackend.Controllers
                         s.Status,
                         s.PaymentStatus,
                         s.Notes,
+                        professionalId = s.Professional.Id,
                         professionalName = s.Professional.FirstName + " " + s.Professional.LastName,
                         professionalEmail = s.Professional.Email,
                         professionalFirstName = s.Professional.FirstName,
@@ -264,9 +318,10 @@ namespace kaizenbackend.Controllers
                 .Select(r => new
                 {
                     r.Id,
-                    rating      = r.RatingValue,
-                    review      = r.Review,
-                    createdAt   = r.CreatedAt,
+                    rating = r.RatingValue,
+                    review = r.Review,
+                    createdAt = r.CreatedAt,
+                    clientId = r.Client.Id,
                     clientName = r.Client.FirstName + " " + r.Client.LastName,
                     clientEmail = r.Client.Email,
                     clientFirstName = r.Client.FirstName,
@@ -280,13 +335,13 @@ namespace kaizenbackend.Controllers
 
             return Ok(new
             {
-                professionalId   = id,
+                professionalId = id,
                 professionalName = professional.FirstName + " " + professional.LastName,
                 professionalFirstName = professional.FirstName,
                 professionalLastName = professional.LastName,
-                averageRating    = Math.Round(averageRating, 1),
-                totalRatings     = ratings.Count,
-                ratings          = ratings
+                averageRating = Math.Round(averageRating, 1),
+                totalRatings = ratings.Count,
+                ratings = ratings
             });
         }
 
@@ -320,77 +375,25 @@ namespace kaizenbackend.Controllers
             foreach (var session in pendingSessions)
             {
                 session.PayoutStatus = "PaidOut";
-                session.UpdatedAt    = DateTime.UtcNow;
+                session.UpdatedAt = DateTime.UtcNow;
             }
 
             if (professionalProfile != null)
             {
                 professionalProfile.PendingPayout -= totalPayoutAmount;
-                professionalProfile.PaidOut       += totalPayoutAmount;
+                professionalProfile.PaidOut += totalPayoutAmount;
             }
 
             await _context.SaveChangesAsync();
 
             return Ok(new
             {
-                message             = $"Payout processed for {professional.FirstName} {professional.LastName}.",
-                professionalId      = id,
-                professionalName    = professional.FirstName + " " + professional.LastName,
-                sessionsProcessed   = sessionCount,
-                totalAmount         = totalPayoutAmount
+                message = $"Payout processed for {professional.FirstName} {professional.LastName}.",
+                professionalId = id,
+                professionalName = professional.FirstName + " " + professional.LastName,
+                sessionsProcessed = sessionCount,
+                totalAmount = totalPayoutAmount
             });
-        }
-
-        // UPDATED DELETE: api/admin/users/{id} - Improved with proper cleanup
-        [HttpDelete("users/{id}")]
-        public async Task<IActionResult> DeleteUser(int id)
-        {
-            if (!IsAdmin()) return Forbid();
-
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (userIdClaim != null && int.Parse(userIdClaim) == id)
-                return BadRequest(new { message = "You cannot delete your own account from here. Use Delete Account in the sidebar." });
-
-            var user = await _context.Users
-                .Include(u => u.ClientProfile)
-                .Include(u => u.ProfessionalProfile)
-                .FirstOrDefaultAsync(u => u.Id == id);
-
-            if (user == null) return NotFound(new { message = "User not found." });
-
-            // Remove related data first to avoid FK constraint errors
-            var sessions = await _context.Sessions
-                .Where(s => s.ClientId == id || s.ProfessionalId == id)
-                .ToListAsync();
-            _context.Sessions.RemoveRange(sessions);
-
-            var assessments = await _context.SelfAssessments
-                .Where(a => a.UserId == id).ToListAsync();
-            _context.SelfAssessments.RemoveRange(assessments);
-
-            var journals = await _context.JournalEntries
-                .Where(j => j.UserId == id).ToListAsync();
-            _context.JournalEntries.RemoveRange(journals);
-
-            var resources = await _context.Resources
-                .Where(r => r.UploadedBy == id).ToListAsync();
-            _context.Resources.RemoveRange(resources);
-
-            if (user.ClientProfile != null)
-                _context.ClientProfiles.Remove(user.ClientProfile);
-
-            if (user.ProfessionalProfile != null)
-                _context.ProfessionalProfiles.Remove(user.ProfessionalProfile);
-
-            var adminRecord = await _context.Admins.FirstOrDefaultAsync(a => a.UserId == id);
-            if (adminRecord != null)
-                _context.Admins.Remove(adminRecord);
-
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
-
-            string name = $"{user.FirstName} {user.LastName}".Trim();
-            return Ok(new { message = $"{name} has been permanently removed from the system." });
         }
 
         // GET: api/admin/sessions
@@ -455,15 +458,14 @@ namespace kaizenbackend.Controllers
                     a.DepressionLevel,
                     a.LonelinessScore,
                     a.LonelinessLevel,
-                    a.Primaryconcern,
+                    primaryConcern = a.Primaryconcern,
                     a.ResultSummary,
                     user = new
                     {
-                        a.User.Id,
-                        UserName = a.User.FirstName + " " + a.User.LastName,
-                        a.User.FirstName,
-                        a.User.LastName,
-                        a.User.Email
+                        UserName = "User Undefined",
+                        FirstName = "User",
+                        LastName = "Undefined",
+                        Email = ""
                     }
                 })
                 .ToListAsync();
@@ -489,6 +491,7 @@ namespace kaizenbackend.Controllers
                     r.Category,
                     r.Url,
                     r.DateUploaded,
+                    r.IsActive,
                     uploadedBy = new
                     {
                         r.Uploader.Id,
@@ -503,69 +506,85 @@ namespace kaizenbackend.Controllers
             return Ok(resources);
         }
 
-        // DELETE: api/admin/resources/{id}
-        [HttpDelete("resources/{id}")]
-        public async Task<IActionResult> DeleteResource(int id)
+        // NEW: Deactivate resource (soft delete)
+        [HttpPut("resources/{id}/deactivate")]
+        public async Task<IActionResult> DeactivateResource(int id)
         {
             if (!IsAdmin()) return Forbid();
 
             var resource = await _context.Resources.FindAsync(id);
-            if (resource == null) return NotFound("Resource not found.");
+            if (resource == null)
+                return NotFound(new { message = "Resource not found." });
 
-            _context.Resources.Remove(resource);
+            if (!resource.IsActive)
+                return BadRequest(new { message = "Resource is already deactivated." });
+
+            resource.IsActive = false;
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Resource removed successfully." });
+            return Ok(new { message = $"Resource \"{resource.Title}\" has been deactivated. It will no longer appear to users." });
+        }
+
+        // NEW: Reactivate resource
+        [HttpPut("resources/{id}/reactivate")]
+        public async Task<IActionResult> ReactivateResource(int id)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var resource = await _context.Resources.FindAsync(id);
+            if (resource == null)
+                return NotFound(new { message = "Resource not found." });
+
+            if (resource.IsActive)
+                return BadRequest(new { message = "Resource is already active." });
+
+            resource.IsActive = true;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = $"Resource \"{resource.Title}\" has been reactivated and is now visible to users." });
         }
 
         // PUT: api/admin/professionals/{id}/external-link
-[HttpPut("professionals/{id}/external-link")]
-public async Task<IActionResult> UpdateProfessionalExternalLink(int id, [FromBody] UpdateExternalLinkDto dto)
-{
-    if (!IsAdmin()) return Forbid();
-    
-    var user = await _context.Users
-        .Include(u => u.ProfessionalProfile)
-        .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
-
-    if (user == null)
-        return NotFound(new { message = "Professional not found." });
-
-    if (user.ProfessionalProfile == null)
-    {
-        user.ProfessionalProfile = new ProfessionalProfile { UserId = user.Id };
-        _context.ProfessionalProfiles.Add(user.ProfessionalProfile);
-    }
-
-    // Validate URL format if provided
-    if (!string.IsNullOrEmpty(dto.ExternalProfileUrl))
-    {
-        if (!Uri.TryCreate(dto.ExternalProfileUrl, UriKind.Absolute, out Uri? uriResult) ||
-            (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
+        [HttpPut("professionals/{id}/external-link")]
+        public async Task<IActionResult> UpdateProfessionalExternalLink(int id, [FromBody] UpdateExternalLinkDto dto)
         {
-            return BadRequest(new { message = "Please enter a valid URL starting with http:// or https://" });
+            if (!IsAdmin()) return Forbid();
+
+            var user = await _context.Users
+                .Include(u => u.ProfessionalProfile)
+                .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Professional");
+
+            if (user == null)
+                return NotFound(new { message = "Professional not found." });
+
+            if (user.ProfessionalProfile == null)
+            {
+                user.ProfessionalProfile = new ProfessionalProfile { UserId = user.Id };
+                _context.ProfessionalProfiles.Add(user.ProfessionalProfile);
+            }
+
+            if (!string.IsNullOrEmpty(dto.ExternalProfileUrl))
+            {
+                if (!Uri.TryCreate(dto.ExternalProfileUrl, UriKind.Absolute, out Uri? uriResult) ||
+                    (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
+                {
+                    return BadRequest(new { message = "Please enter a valid URL starting with http:// or https://" });
+                }
+                user.ProfessionalProfile.ExternalProfileUrl = dto.ExternalProfileUrl;
+            }
+            else
+            {
+                user.ProfessionalProfile.ExternalProfileUrl = null;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message = "External profile link updated successfully.",
+                externalProfileUrl = user.ProfessionalProfile.ExternalProfileUrl
+            });
         }
-        user.ProfessionalProfile.ExternalProfileUrl = dto.ExternalProfileUrl;
-    }
-    else
-    {
-        user.ProfessionalProfile.ExternalProfileUrl = null;
-    }
-
-    await _context.SaveChangesAsync();
-
-    return Ok(new 
-    { 
-        message = "External profile link updated successfully.",
-        externalProfileUrl = user.ProfessionalProfile.ExternalProfileUrl
-    });
-}
-
-// DTO for updating external link
-public class UpdateExternalLinkDto
-{
-    public string? ExternalProfileUrl { get; set; }
-}
 
         // Helper
         private int GetPercentageFromRating(decimal rating)
@@ -576,11 +595,44 @@ public class UpdateExternalLinkDto
             if (rating >= 3.5m) return 60;
             return 55;
         }
+
+        private async Task SendAccountStatusEmailAsync(User user, string subject, string message)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(user.Email)
+                    || user.Email.StartsWith("deleted_")
+                    || user.Email.EndsWith("@deleted.kaizen"))
+                {
+                    return;
+                }
+
+                string fullName = $"{user.FirstName} {user.LastName}".Trim();
+                if (string.IsNullOrWhiteSpace(fullName)) fullName = "there";
+
+                string body = $@"
+                    <h2>{WebUtility.HtmlEncode(subject)}</h2>
+                    <p>Hello {WebUtility.HtmlEncode(fullName)},</p>
+                    <p>{WebUtility.HtmlEncode(message)}</p>
+                    <p>If you believe this was a mistake, please contact Kaizen support.</p>";
+
+                await _emailService.SendEmailAsync(user.Email, subject, body, true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Account status email failed: {ex.Message}");
+            }
+        }
     }
 
     public class PayoutRequest
     {
         public string? Notes { get; set; }
         public string? PaymentReference { get; set; }
+    }
+
+    public class UpdateExternalLinkDto
+    {
+        public string? ExternalProfileUrl { get; set; }
     }
 }

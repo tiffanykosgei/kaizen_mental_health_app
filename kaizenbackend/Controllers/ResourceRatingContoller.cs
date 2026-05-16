@@ -31,6 +31,14 @@ namespace kaizenbackend.Controllers
             if (resource == null)
                 return NotFound("Resource not found.");
 
+            var uploaderIsActive = await _context.Resources
+                .Where(r => r.Id == resourceId)
+                .Select(r => r.Uploader.IsActive)
+                .FirstOrDefaultAsync();
+
+            if (!resource.IsActive || !uploaderIsActive)
+                return NotFound("Resource not found.");
+
             if (request.Rating < 1 || request.Rating > 5)
                 return BadRequest("Rating must be between 1 and 5.");
 
@@ -77,7 +85,7 @@ namespace kaizenbackend.Controllers
         {
             var ratings = await _context.ResourceRatings
                 .Include(r => r.User)
-                .Where(r => r.ResourceId == resourceId)
+                .Where(r => r.ResourceId == resourceId && r.User.IsActive)
                 .OrderByDescending(r => r.CreatedAt)
                 .Select(r => new
                 {

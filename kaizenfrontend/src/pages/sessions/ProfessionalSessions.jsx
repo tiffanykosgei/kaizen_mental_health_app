@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import API from '../api/axios';
-import VideoCall from '../components/VideoCall';
-import * as XLSX from 'xlsx';
+import API from '../../api/axios';
+import VideoCall from '../../components/VideoCall';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { addReportHeader } from '../../utils/pdfReportBranding';
 import html2canvas from 'html2canvas';
 
 const PINK   = '#e91e8c';
@@ -61,6 +61,8 @@ export default function ProfessionalSessions() {
     if (fullName) return fullName;
     return client.email || client.Email || 'N/A';
   };
+
+  const getClientId = (session) => session.client?.id ?? session.clientId ?? session.ClientId ?? 'N/A';
 
   const fetchSessions = async () => {
     setLoading(true);
@@ -119,7 +121,8 @@ export default function ProfessionalSessions() {
       filtered = filtered.filter(s => {
         const clientName = s.client ? getClientName(s.client) : s.directClientName;
         return clientName.toLowerCase().includes(term) ||
-          (s.client?.email || '').toLowerCase().includes(term);
+          (s.client?.email || '').toLowerCase().includes(term) ||
+          String(getClientId(s)).toLowerCase().includes(term);
       });
     }
 
@@ -172,7 +175,7 @@ export default function ProfessionalSessions() {
       setSuccess(
         meetingCreated
           ? 'Session confirmed! Video meeting room created. Client can now make payment.'
-          : `Session ${newStatus.toLowerCase()} successfully.`
+          : response.data?.message || `Session ${newStatus.toLowerCase()} successfully.`
       );
       fetchSessions();
       setTimeout(() => setSuccess(''), 4000);
@@ -234,65 +237,53 @@ export default function ProfessionalSessions() {
       setDownloadLoading(false);
     }
   };
-
-  const exportToExcel = () => {
-    const exportData = filteredSessions.map(session => {
-      const clientName = session.client ? getClientName(session.client) : (session.directClientName || 'N/A');
-      return {
-        'Session ID':     session.id,
-        'Date':           new Date(session.sessionDate).toLocaleString(),
-        'Client':         clientName,
-        'Client Email':   session.client?.email || 'N/A',
-        'Status':         session.status,
-        'Payment Status': session.paymentStatus,
-        'Amount (KSh)':   1500,
-        'Notes':          session.notes || ''
-      };
-    });
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'My Sessions');
-    XLSX.writeFile(wb, `my_sessions_${new Date().toISOString().split('T')[0]}.xlsx`);
-    setShowExportMenu(false);
-  };
-
+  
   const exportToPDF = () => {
     try {
       const doc = new jsPDF('landscape');
+      const reportTitle = statusFilter !== 'all' ? `${statusFilter} Sessions Report` : 'My Sessions Report';
+      const startY = addReportHeader(doc, reportTitle, [
+        `Generated: ${new Date().toLocaleString()}`,
+        `Total Sessions: ${filteredSessions.length}`,
+        statusFilter !== 'all' ? `Status Filter: ${statusFilter}` : ''
+      ]);
 
-      doc.setFontSize(18);
-      doc.setTextColor(233, 30, 140);
-      doc.text('My Sessions Report', 14, 20);
-
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-      doc.text(`Total Sessions: ${filteredSessions.length}`, 14, 37);
+      const headers = ['Client ID', 'Date', 'Client', 'Email'];
+      if (statusFilter === 'all') headers.push('Status');
+      headers.push('Payment', 'Amount', 'Notes');
 
       const tableData = filteredSessions.map(session => {
         const clientName = session.client ? getClientName(session.client) : (session.directClientName || 'N/A');
-        return [
-          session.id.toString(),
+        const row = [
+          String(getClientId(session)),
           new Date(session.sessionDate).toLocaleDateString(),
           clientName,
-          session.client?.email || 'N/A',
-          session.status,
+          session.client?.email || 'N/A'
+        ];
+        if (statusFilter === 'all') row.push(session.status);
+        row.push(
           session.paymentStatus,
           `KSh 1,500`,
           session.notes || ''
-        ];
+        );
+        return row;
       });
 
       doc.autoTable({
-        startY: 45,
-        head: [['ID', 'Date', 'Client', 'Email', 'Status', 'Payment', 'Amount', 'Notes']],
+        startY,
+        head: [headers],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
         alternateRowStyles: { fillColor: [245, 245, 245] }
       });
-
+      
+      const finalY = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Contact: +254 729 604375 | Email: kosgeitiffany@gmail.com', 14, finalY);
+      doc.text(`© ${new Date().getFullYear()} Kaizen Mental Health Platform — A safe space for mental wellness`, 14, finalY + 6);
+      
       doc.save(`my_sessions_${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
     } catch (err) {
@@ -348,14 +339,12 @@ export default function ProfessionalSessions() {
     fontSize: 13, fontFamily: 'inherit'
   };
 
-  const handleViewHistory = (clientId) => {
+  const handleViewClientProfile = (clientId) => {
     if (!clientId) {
-      console.error('No client ID available');
-      setError('Cannot view history: Client information missing');
+      setError('Client ID missing');
       return;
     }
-    console.log('Navigating to history for client:', clientId);
-    navigate(`/professional-assessment-history/${clientId}`);
+    navigate(`/professional/client-profile/${clientId}`);
   };
 
   const NotesModal = ({ notes, onClose, clientName }) => {
@@ -447,7 +436,6 @@ export default function ProfessionalSessions() {
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '32px 20px' }}>
-      {/* Notes Modal */}
       {expandedNotes && (
         <NotesModal
           notes={expandedNotes.notes}
@@ -456,7 +444,6 @@ export default function ProfessionalSessions() {
         />
       )}
 
-      {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
           <div>
@@ -489,7 +476,6 @@ export default function ProfessionalSessions() {
         </div>
       </div>
 
-      {/* Alerts */}
       {error && (
         <div
           style={{
@@ -521,7 +507,6 @@ export default function ProfessionalSessions() {
         </div>
       )}
 
-      {/* Stats Cards */}
       <div
         style={{
           display: 'grid',
@@ -552,7 +537,6 @@ export default function ProfessionalSessions() {
         ))}
       </div>
 
-      {/* Filters Panel */}
       <div
         style={{
           background: 'var(--bg-card)',
@@ -578,7 +562,7 @@ export default function ProfessionalSessions() {
             </label>
             <input
               type="text"
-              placeholder="Name or email..."
+              placeholder="Name, ID or email..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               style={inputStyle}
@@ -686,22 +670,6 @@ export default function ProfessionalSessions() {
                 }}
               >
                 <button
-                  onClick={exportToExcel}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '10px 16px',
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    color: 'var(--text-primary)',
-                    fontSize: 13
-                  }}
-                >
-                  📊 Excel
-                </button>
-                <button
                   onClick={exportToPDF}
                   style={{
                     display: 'block',
@@ -723,7 +691,6 @@ export default function ProfessionalSessions() {
         </div>
       </div>
 
-      {/* Sessions Table */}
       {filteredSessions.length === 0 ? (
         <div
           style={{
@@ -750,10 +717,10 @@ export default function ProfessionalSessions() {
           }}
         >
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
-                  {['ID', 'Client', 'Email', 'Date & Time', 'Amount', 'Status', 'Payment', 'Notes', 'Actions'].map(h => (
+                  {['Client ID', 'Client', 'Email', 'Date & Time', 'Amount', 'Status', 'Payment', 'Notes', 'Actions'].map(h => (
                     <th
                       key={h}
                       style={{
@@ -777,11 +744,14 @@ export default function ProfessionalSessions() {
                   const ss = statusColor(session.status);
                   const ps = paymentColor(session.paymentStatus);
                   const isCompleted = session.status === 'Completed';
+                  const isCancelled = session.status === 'Cancelled';
                   const canJoinVideo = session.status === 'Confirmed' && !!session.meetingUrl && session.paymentStatus === 'Paid' && !isCompleted;
                   const active = isSessionActive(session.sessionDate);
                   const isPending = session.status === 'Pending';
                   const isConfirmed = session.status === 'Confirmed';
                   const isUpdating = updatingId === session.id;
+                  const canMarkCompleted = isConfirmed && session.paymentStatus === 'Paid' && new Date(session.sessionDate) <= new Date();
+                  const canViewProfile = session.client && session.client.id && !isCompleted && !isCancelled;
 
                   return (
                     <tr
@@ -791,7 +761,7 @@ export default function ProfessionalSessions() {
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        #{session.id}
+                        #{getClientId(session)}
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                         {clientName}
@@ -838,7 +808,6 @@ export default function ProfessionalSessions() {
                         </span>
                       </td>
 
-                      {/* NOTES COLUMN - Clickable to expand */}
                       <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)', maxWidth: 250 }}>
                         {session.notes ? (
                           <button
@@ -865,7 +834,6 @@ export default function ProfessionalSessions() {
                         )}
                       </td>
 
-                      {/* Actions */}
                       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' }}>
                           {isPending && (
@@ -909,8 +877,7 @@ export default function ProfessionalSessions() {
                             </>
                           )}
 
-                          {/* Mark as Completed for past confirmed sessions - Only show if not already completed */}
-                          {isConfirmed && !isCompleted && new Date(session.sessionDate) <= new Date() && (
+                          {canMarkCompleted && !isCompleted && (
                             <button
                               onClick={() => handleStatusUpdate(session.id, 'Completed')}
                               disabled={isUpdating}
@@ -931,7 +898,6 @@ export default function ProfessionalSessions() {
                             </button>
                           )}
 
-                          {/* Join Video Call - HIDDEN for completed sessions */}
                           {canJoinVideo && !isCompleted && (
                             <button
                               onClick={() => {
@@ -957,7 +923,6 @@ export default function ProfessionalSessions() {
                             </button>
                           )}
 
-                          {/* View Receipt button for paid sessions */}
                           {session.paymentStatus === 'Paid' && (
                             <button
                               onClick={() => openReceiptModal(session)}
@@ -977,10 +942,9 @@ export default function ProfessionalSessions() {
                             </button>
                           )}
 
-                          {/* View Assessment History button - HIDDEN for completed sessions */}
-                          {session.client && session.client.id && !isCompleted && (
+                          {canViewProfile && (
                             <button
-                              onClick={() => handleViewHistory(session.client.id)}
+                              onClick={() => handleViewClientProfile(session.client.id)}
                               style={{
                                 padding: '5px 12px',
                                 borderRadius: 6,
@@ -993,9 +957,10 @@ export default function ProfessionalSessions() {
                                 whiteSpace: 'nowrap'
                               }}
                             >
-                              📊 History
+                              👤 View Profile
                             </button>
                           )}
+
 
                           {session.status === 'Completed' && (
                             <span style={{ fontSize: 11, color: '#4caf50', whiteSpace: 'nowrap' }}>✓ Done</span>
@@ -1018,7 +983,6 @@ export default function ProfessionalSessions() {
         Showing {filteredSessions.length} of {sessions.length} sessions
       </div>
 
-      {/* Video Call Modal */}
       {showVideoCall && selectedMeetingUrl && (
         <VideoCall
           roomUrl={selectedMeetingUrl}
@@ -1031,7 +995,6 @@ export default function ProfessionalSessions() {
         />
       )}
 
-      {/* Receipt Modal */}
       {receiptModal && (
         <div
           style={{

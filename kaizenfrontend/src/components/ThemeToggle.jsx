@@ -2,7 +2,7 @@
 import { useTheme } from '../context/ThemeContext';
 
 const ThemeToggle = () => {
-  const { theme, setTheme } = useTheme();
+  const { theme, setThemeMode } = useTheme();
 
   return (
     <div
@@ -17,7 +17,7 @@ const ThemeToggle = () => {
       }}
     >
       <button
-        onClick={() => setTheme('light')}
+        onClick={() => setThemeMode('light')}
         className="theme-toggle-option"
         style={{
           flex: 1,
@@ -51,7 +51,7 @@ const ThemeToggle = () => {
       </button>
       
       <button
-        onClick={() => setTheme('dark')}
+        onClick={() => setThemeMode('dark')}
         className="theme-toggle-option"
         style={{
           flex: 1,

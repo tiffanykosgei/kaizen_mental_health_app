@@ -3,21 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 
 const questions = [
-  { id: 'q1',  category: 'Anxiety',    text: 'How often do you feel nervous, anxious or on edge without a clear reason?' },
-  { id: 'q2',  category: 'Anxiety',    text: 'How often are you unable to stop or control your worrying?' },
-  { id: 'q3',  category: 'Anxiety',    text: 'How often does your heart race or do you experience physical tension when nothing alarming is happening?' },
-  { id: 'q4',  category: 'Anxiety',    text: 'How often do you avoid situations or people because they make you feel anxious?' },
-  { id: 'q5',  category: 'Anxiety',    text: 'How difficult is it for you to relax even when you have time to do so?' },
-  { id: 'q6',  category: 'Depression', text: 'How often do you feel little interest or pleasure in things you used to enjoy?' },
-  { id: 'q7',  category: 'Depression', text: 'How often do you feel down, hopeless or empty inside?' },
-  { id: 'q8',  category: 'Depression', text: 'How often do you feel so tired that even small tasks feel like too much effort?' },
-  { id: 'q9',  category: 'Depression', text: 'How often do you feel like a burden to the people around you?' },
-  { id: 'q10', category: 'Depression', text: 'How often do you have trouble concentrating on everyday tasks like work, reading or conversations?' },
-  { id: 'q11', category: 'Loneliness', text: 'How often do you feel lonely or disconnected from the people around you?' },
-  { id: 'q12', category: 'Loneliness', text: 'How often do you feel like no one truly understands you?' },
-  { id: 'q13', category: 'Loneliness', text: 'How often do you feel left out or excluded from social situations?' },
-  { id: 'q14', category: 'Loneliness', text: 'How often do you find it difficult to reach out to others when you need support?' },
-  { id: 'q15', category: 'Loneliness', text: 'How often do you feel that your relationships lack depth or meaning?' },
+  { id: 'q1',  category: 'Anxiety',    text: 'I have felt tense, uneasy, or on edge.' },
+  { id: 'q6',  category: 'Depression', text: 'Things I usually enjoy have felt less interesting or harder to begin.' },
+  { id: 'q11', category: 'Loneliness', text: 'I have felt a little distant or disconnected from people around me.' },
+  { id: 'q2',  category: 'Anxiety',    text: 'Worries have stayed on my mind even when I tried to set them aside.' },
+  { id: 'q7',  category: 'Depression', text: 'My mood has felt low, heavy, or less hopeful than usual.' },
+  { id: 'q12', category: 'Loneliness', text: 'I have wished someone understood what I was going through a bit better.' },
+  { id: 'q3',  category: 'Anxiety',    text: 'My body has shown signs of stress, such as tightness, restlessness, or a racing heart.' },
+  { id: 'q8',  category: 'Depression', text: 'Everyday tasks have felt more tiring or demanding than they normally would.' },
+  { id: 'q13', category: 'Loneliness', text: 'I have felt left out, overlooked, or not fully included.' },
+  { id: 'q4',  category: 'Anxiety',    text: 'I have stepped back from something because it felt stressful or overwhelming.' },
+  { id: 'q9',  category: 'Depression', text: 'I have been hard on myself or felt that I was letting others down.' },
+  { id: 'q14', category: 'Loneliness', text: 'Reaching out for support has felt difficult, even when I wanted connection.' },
+  { id: 'q5',  category: 'Anxiety',    text: 'Settling my mind or relaxing has felt difficult when I had the chance.' },
+  { id: 'q10', category: 'Depression', text: 'Focusing on work, reading, conversations, or daily routines has felt difficult.' },
+  { id: 'q15', category: 'Loneliness', text: 'My relationships have felt less close, meaningful, or supportive than I needed.' },
 ];
 
 const scaleLabels = { 1: 'Never', 2: 'Rarely', 3: 'Sometimes', 4: 'Often', 5: 'Always' };
@@ -523,7 +523,7 @@ export default function Assessment() {
                           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                             {resource.uploadedBy && (
                               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                👩‍⚕️ {resource.uploadedBy}
+                                👩🏾‍⚕️ {resource.uploadedBy}
                               </span>
                             )}
                             {resource.averageRating > 0 && (

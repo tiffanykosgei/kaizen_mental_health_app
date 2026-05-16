@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
-import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { addReportHeader } from '../utils/pdfReportBranding';
 
 const categoryColors = {
   Anxiety:    { bg: 'rgba(233,30,140,0.12)', text: '#e91e8c' },
@@ -157,7 +157,9 @@ export default function Resources() {
       filtered = filtered.filter(r => 
         r.title.toLowerCase().includes(term) ||
         (r.description || '').toLowerCase().includes(term) ||
-        (r.uploadedBy || '').toLowerCase().includes(term)
+        String(r.uploadedById || '').toLowerCase().includes(term) ||
+        (r.uploadedBy || '').toLowerCase().includes(term) ||
+        (r.uploadedByEmail || '').toLowerCase().includes(term)
       );
     }
     
@@ -312,59 +314,67 @@ export default function Resources() {
       setTimeout(() => setError(''), 3000);
     }
   };
-
-  const exportToExcel = (data, filename) => {
-    const exportData = data.map(r => ({
-      'Title': r.title,
-      'Type': r.type,
-      'Category': r.category,
-      'Rating': resourceRatings[r.id]?.averageRating?.toFixed(1) || 'Not rated',
-      'Total Ratings': resourceRatings[r.id]?.totalRatings || 0,
-      'Upload Date': new Date(r.dateUploaded).toLocaleDateString(),
-      'Uploaded By': r.uploadedBy || 'N/A',
-      'URL': r.url
-    }));
-    
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, filename);
-    XLSX.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
-    setShowExportMenu(false);
-  };
-
   const exportToPDF = (data, title) => {
     try {
       const doc = new jsPDF('landscape');
-      
-      doc.setFontSize(18);
-      doc.setTextColor(233, 30, 140);
-      doc.text(title, 14, 20);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-      doc.text(`Total Resources: ${data.length}`, 14, 37);
+      const isMyReport = title.startsWith('My ');
+      const selectedType = isMyReport ? myTypeFilter : browseTypeFilter;
+      const selectedCategory = isMyReport ? myCategoryFilter : browseCategoryFilter;
+      const selectedRating = isMyReport ? myRatingFilter : browseRatingFilter;
+      const ratingLabel = {
+        high: 'High Rated',
+        medium: 'Medium Rated',
+        low: 'Low Rated',
+        unrated: 'Unrated'
+      }[selectedRating] || '';
+      const reportTitle = [
+        isMyReport ? 'My' : 'Browse',
+        selectedType !== 'all' ? selectedType : '',
+        selectedCategory !== 'all' ? selectedCategory : '',
+        ratingLabel,
+        'Resources Report'
+      ].filter(Boolean).join(' ');
+      const startY = addReportHeader(doc, reportTitle, [
+        `Generated: ${new Date().toLocaleString()}`,
+        `Total Resources: ${data.length}`,
+        selectedType !== 'all' ? `Type Filter: ${selectedType}` : '',
+        selectedCategory !== 'all' ? `Category Filter: ${selectedCategory}` : '',
+        selectedRating !== 'all' ? `Rating Filter: ${ratingLabel}` : ''
+      ]);
+
+      const headers = ['Title'];
+      if (selectedType === 'all') headers.push('Type');
+      if (selectedCategory === 'all') headers.push('Category');
+      headers.push('Rating', 'Reviews', 'Upload Date', 'Uploader ID', 'Uploaded By');
       
       const tableData = data.map(r => [
         r.title.substring(0, 40),
-        r.type,
-        r.category,
+        ...(selectedType === 'all' ? [r.type] : []),
+        ...(selectedCategory === 'all' ? [r.category] : []),
         resourceRatings[r.id]?.averageRating?.toFixed(1) || '—',
         (resourceRatings[r.id]?.totalRatings || 0).toString(),
         new Date(r.dateUploaded).toLocaleDateString(),
+        String(r.uploadedById || 'N/A'),
         r.uploadedBy || 'N/A'
       ]);
       
       doc.autoTable({
-        startY: 45,
-        head: [['Title', 'Type', 'Category', 'Rating', 'Reviews', 'Upload Date', 'Uploaded By']],
+        startY,
+        head: [headers],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [233, 30, 140], textColor: [255, 255, 255] },
         alternateRowStyles: { fillColor: [245, 245, 245] }
       });
       
-      doc.save(`${title.replace(/\s/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+      // Footer
+      const finalY = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Contact: +254 729 604375 | Email: kosgeitiffany@gmail.com', 14, finalY);
+      doc.text(`© ${new Date().getFullYear()} Kaizen Mental Health Platform — A safe space for mental wellness`, 14, finalY + 6);
+      
+      doc.save(`${reportTitle.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase()}_${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
       alert('PDF downloaded successfully!');
     } catch (err) {
@@ -579,7 +589,7 @@ export default function Resources() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
                 <div>
                   <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Search</label>
-                  <input type="text" placeholder="Title, description, or uploader..." value={browseSearchTerm} onChange={e => setBrowseSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
+                  <input type="text" placeholder="Title, description, uploader ID, name or email..." value={browseSearchTerm} onChange={e => setBrowseSearchTerm(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Type</label>
@@ -643,7 +653,6 @@ export default function Resources() {
                   </button>
                   {showExportMenu && (
                     <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, zIndex: 10 }}>
-                      <button onClick={() => exportToExcel(filteredAllResources, 'Browse_Resources')} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📊 Excel</button>
                       <button onClick={() => exportToPDF(filteredAllResources, 'Browse Resources Report')} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📄 PDF</button>
                     </div>
                   )}
@@ -674,6 +683,7 @@ export default function Resources() {
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Rating</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Reviews</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Upload Date</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Uploader ID</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Uploaded By</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
                        </tr>
@@ -712,6 +722,9 @@ export default function Resources() {
                             </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
                               {new Date(resource.dateUploaded).toLocaleDateString()}
+                            </td>
+                            <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-primary)' }}>
+                              #{resource.uploadedById || 'N/A'}
                             </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
                               {resource.uploadedBy || 'N/A'}
@@ -826,7 +839,6 @@ export default function Resources() {
                   </button>
                   {showExportMenu && (
                     <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, zIndex: 10 }}>
-                      <button onClick={() => exportToExcel(filteredMyResources, 'My_Resources')} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📊 Excel</button>
                       <button onClick={() => exportToPDF(filteredMyResources, 'My Resources Report')} style={{ display: 'block', width: '100%', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>📄 PDF</button>
                     </div>
                   )}
@@ -1034,7 +1046,6 @@ export default function Resources() {
                 {ratingValue === 2 && 'Fair — slightly helpful'}
                 {ratingValue === 3 && 'Good — somewhat helpful'}
                 {ratingValue === 4 && 'Very good — quite helpful'}
-                {ratingValue === 5 && 'Excellent — highly recommended!'}
               </p>
             </div>
             

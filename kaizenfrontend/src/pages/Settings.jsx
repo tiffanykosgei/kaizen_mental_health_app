@@ -15,6 +15,13 @@ export default function Settings() {
     firstName: '', lastName: '', email: '', phoneNumber: '', profilePicture: ''
   });
 
+  // Emergency contact state (Client only)
+  const [emergencyContact, setEmergencyContact] = useState({
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactEmail: ''
+  });
+
   const [profilePictureFile,    setProfilePictureFile]    = useState(null);
   const [profilePicturePreview, setProfilePicturePreview] = useState('');
   const [uploadingPicture,      setUploadingPicture]      = useState(false);
@@ -24,155 +31,82 @@ export default function Settings() {
     currentPassword: '', newPassword: '', confirmPassword: ''
   });
 
-  // MERGED: Unified Notification & Reminder Settings
   const [reminderSettings, setReminderSettings] = useState({
-    // Browser/Push Notifications
-    browserNotifications: {
-      enabled: false,
-      permissionRequested: false
-    },
-    // Email notifications master toggle
-    emailNotifications: {
-      enabled: true
-    },
-    // Client-specific reminders
+    browserNotifications: { enabled: false, permissionRequested: false },
+    emailNotifications: { enabled: true },
     clientReminders: {
-      sessionStartReminder: {
-        enabled: true,
-        minutesBefore: 30,
-        pushNotification: true,
-        emailNotification: true
-      },
-      journalReminder: {
-        enabled: true,
-        reminderTime: '20:00',
-        reminderDays: ['monday', 'wednesday', 'friday'],
-        pushNotification: true,
-        emailNotification: true
-      },
-      paymentProcessedReminder: {
-        enabled: true,
-        pushNotification: true,
-        emailNotification: true
-      },
-      assessmentReminder: {
-        enabled: true,
-        reminderFrequency: 'weekly',
-        pushNotification: true,
-        emailNotification: true
-      },
-      sessionFeedbackReminder: {
-        enabled: true,
-        hoursAfterSession: 2,
-        pushNotification: true,
-        emailNotification: true
-      }
+      sessionStartReminder:    { enabled: true,  minutesBefore: 30,     pushNotification: true, emailNotification: true },
+      journalReminder:         { enabled: true,  reminderTime: '20:00', reminderDays: ['monday', 'wednesday', 'friday'], pushNotification: true, emailNotification: true },
+      paymentProcessedReminder:{ enabled: true,  pushNotification: true, emailNotification: true },
+      assessmentReminder:      { enabled: true,  reminderFrequency: 'weekly', pushNotification: true, emailNotification: true },
+      sessionFeedbackReminder: { enabled: true,  hoursAfterSession: 2,  pushNotification: true, emailNotification: true }
     },
-    // Professional-specific reminders
     professionalReminders: {
-      sessionStartReminder: {
-        enabled: true,
-        minutesBefore: 30,
-        pushNotification: true,
-        emailNotification: true
-      },
-      professionalPaidReminder: {
-        enabled: true,
-        pushNotification: true,
-        emailNotification: true
-      },
-      newSessionBookedReminder: {
-        enabled: true,
-        pushNotification: true,
-        emailNotification: true
-      },
-      sessionCancelledReminder: {
-        enabled: true,
-        pushNotification: true,
-        emailNotification: true
-      }
+      sessionStartReminder:       { enabled: true, minutesBefore: 30, pushNotification: true, emailNotification: true },
+      professionalPaidReminder:   { enabled: true, pushNotification: true, emailNotification: true },
+      newSessionBookedReminder:   { enabled: true, pushNotification: true, emailNotification: true },
+      sessionCancelledReminder:   { enabled: true, pushNotification: true, emailNotification: true }
     },
-    // Admin-specific reminders
     adminReminders: {
-      adminPaymentProcessingReminder: {
-        enabled: true,
-        reminderFrequency: 'biweekly',
-        emailNotification: true
-      },
-      newProfessionalRegistrationReminder: {
-        enabled: true,
-        emailNotification: true
-      },
-      platformReportReminder: {
-        enabled: true,
-        reminderFrequency: 'weekly',
-        emailNotification: true
-      },
-      lowStockAlert: {
-        enabled: true,
-        emailNotification: true
-      }
+      adminPaymentProcessingReminder:   { enabled: true, reminderFrequency: 'biweekly', emailNotification: true },
+      newProfessionalRegistrationReminder: { enabled: true, emailNotification: true },
+      platformReportReminder:           { enabled: true, reminderFrequency: 'weekly',   emailNotification: true },
+      lowStockAlert:                    { enabled: true, emailNotification: true }
     },
-    // Platform updates (visible to all roles)
-    platformUpdates: {
-      enabled: false,
-      emailNotification: false,
-      pushNotification: false
-    },
-    // Marketing emails (visible to all roles)
-    marketingEmails: {
-      enabled: false
-    }
+    platformUpdates:  { enabled: false, emailNotification: false, pushNotification: false },
+    marketingEmails:  { enabled: false }
   });
 
   const [professionalProfileData, setProfessionalProfileData] = useState({
     bio: '', specialization: '', yearsOfExperience: '',
-    education: '', certifications: '', licenseNumber: '', externalProfileUrl: ''
+    education: '', certifications: '', licenseNumber: '', externalProfileUrl: '',
+    isAcceptingSessions: true, useAvailabilityWindow: false,
+    availableFromLocal: '', availableUntilLocal: ''
   });
 
   const [professionalSettings, setProfessionalSettings] = useState({
-    autoConfirmSessions: false, sessionBufferTime: 15, timezone: 'Africa/Nairobi'
-  });
-
-  const [adminSettings, setAdminSettings] = useState({
-    lowStockAlert: true, weeklyReports: true, autoBackup: false
+    autoConfirmSessions: true, sessionBufferTime: 15, timezone: 'Africa/Nairobi'
   });
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [activeTab,        setActiveTab]        = useState('profile');
 
-  // Request browser notification permission
   const requestBrowserNotificationPermission = async () => {
-    if (!('Notification' in window)) {
-      setError('This browser does not support desktop notifications');
-      return false;
-    }
-
-    if (Notification.permission === 'granted') {
-      setBrowserNotificationPermission('granted');
-      return true;
-    }
-
+    if (!('Notification' in window)) { setError('This browser does not support desktop notifications'); return false; }
+    if (Notification.permission === 'granted') { setBrowserNotificationPermission('granted'); return true; }
     if (Notification.permission !== 'denied') {
       const permission = await Notification.requestPermission();
       setBrowserNotificationPermission(permission);
       if (permission === 'granted') {
         setSuccess('Browser notifications enabled! You will now receive real-time alerts.');
         setTimeout(() => setSuccess(''), 3000);
+        window.dispatchEvent(new CustomEvent('kaizenNotificationTest'));
         return true;
       }
     }
     return false;
   };
 
-  // Check browser notification permission on load
-  useEffect(() => {
-    if ('Notification' in window) {
-      setBrowserNotificationPermission(Notification.permission);
-    }
-  }, []);
+  const sendTestNotification = () => {
+    if (!reminderSettings.browserNotifications?.enabled) { setError('Please enable browser notifications first.'); setTimeout(() => setError(''), 3000); return; }
+    if ('Notification' in window && Notification.permission !== 'granted') { setError('Please allow browser notification permission first.'); setTimeout(() => setError(''), 3000); return; }
+    window.dispatchEvent(new CustomEvent('kaizenNotificationTest'));
+    setSuccess('Test notification sent.');
+    setTimeout(() => setSuccess(''), 3000);
+  };
 
+  useEffect(() => { if ('Notification' in window) setBrowserNotificationPermission(Notification.permission); }, []);
   useEffect(() => { fetchSettings(); }, []);
+
+  const toDateTimeLocalValue = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  };
+
+  const toUtcIso = (value) => value ? new Date(value).toISOString() : null;
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -188,6 +122,15 @@ export default function Settings() {
         phoneNumber:    userData.phoneNumber    || '',
         profilePicture: userData.profilePicture || ''
       });
+
+      // Load emergency contact for clients
+      if (role === 'Client') {
+        setEmergencyContact({
+          emergencyContactName: userData.emergencyContactName || '',
+          emergencyContactPhone: userData.emergencyContactPhone || '',
+          emergencyContactEmail: userData.emergencyContactEmail || ''
+        });
+      }
 
       if (userData.profilePicture) {
         const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -205,37 +148,32 @@ export default function Settings() {
           education:          prof.education          || '',
           certifications:     prof.certifications     || '',
           licenseNumber:      prof.licenseNumber      || '',
-          externalProfileUrl: prof.externalProfileUrl || ''
+          externalProfileUrl: prof.externalProfileUrl || '',
+          isAcceptingSessions: prof.isAcceptingSessions !== false,
+          useAvailabilityWindow: Boolean(prof.availableFromUtc || prof.availableUntilUtc),
+          availableFromLocal: toDateTimeLocalValue(prof.availableFromUtc),
+          availableUntilLocal: toDateTimeLocalValue(prof.availableUntilUtc)
         });
       }
 
-      // Load saved preferences
       const savedReminders = localStorage.getItem('reminderSettings');
       if (savedReminders) {
         const parsed = JSON.parse(savedReminders);
-        // Ensure all nested structures exist
-        const mergedReminders = {
-          ...reminderSettings,
-          ...parsed,
-          browserNotifications: { ...reminderSettings.browserNotifications, ...parsed.browserNotifications },
-          emailNotifications: { ...reminderSettings.emailNotifications, ...parsed.emailNotifications },
-          clientReminders: { ...reminderSettings.clientReminders, ...parsed.clientReminders },
-          professionalReminders: { ...reminderSettings.professionalReminders, ...parsed.professionalReminders },
-          adminReminders: { ...reminderSettings.adminReminders, ...parsed.adminReminders },
-          platformUpdates: { ...reminderSettings.platformUpdates, ...parsed.platformUpdates },
-          marketingEmails: { ...reminderSettings.marketingEmails, ...parsed.marketingEmails }
-        };
-        setReminderSettings(mergedReminders);
+        setReminderSettings(prev => ({
+          ...prev, ...parsed,
+          browserNotifications:  { ...prev.browserNotifications,  ...parsed.browserNotifications },
+          emailNotifications:    { ...prev.emailNotifications,    ...parsed.emailNotifications },
+          clientReminders:       { ...prev.clientReminders,       ...parsed.clientReminders },
+          professionalReminders: { ...prev.professionalReminders, ...parsed.professionalReminders },
+          adminReminders:        { ...prev.adminReminders,        ...parsed.adminReminders },
+          platformUpdates:       { ...prev.platformUpdates,       ...parsed.platformUpdates },
+          marketingEmails:       { ...prev.marketingEmails,       ...parsed.marketingEmails }
+        }));
       }
 
       if (role === 'Professional') {
         const savedProf = localStorage.getItem('professionalSettings');
         if (savedProf) setProfessionalSettings(JSON.parse(savedProf));
-      }
-
-      if (role === 'Admin') {
-        const savedAdmin = localStorage.getItem('adminSettings');
-        if (savedAdmin) setAdminSettings(JSON.parse(savedAdmin));
       }
 
     } catch (err) {
@@ -249,13 +187,16 @@ export default function Settings() {
   const isValidUrl = (url) => {
     if (!url || url.trim() === '') return true;
     const toTest = url.startsWith('http') ? url : `https://${url}`;
-    try {
-      new URL(toTest);
-      return true;
-    } catch {
-      return false;
-    }
+    try { new URL(toTest); return true; } catch { return false; }
   };
+
+  const normalizePhoneNumber = (value) => {
+    const digits = (value || '').replace(/\D/g, '');
+    if (digits.length === 12 && digits.startsWith('254')) return `0${digits.slice(3)}`;
+    return digits;
+  };
+
+  const isValidLocalPhoneNumber = (value) => /^(07|01)\d{8}$/.test(normalizePhoneNumber(value));
 
   const handleProfilePictureChange = (e) => {
     const file = e.target.files[0];
@@ -273,17 +214,12 @@ export default function Settings() {
     try {
       const formData = new FormData();
       formData.append('file', profilePictureFile);
-
-      const response = await API.post('/auth/upload-profile-picture', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
+      const response = await API.post('/auth/upload-profile-picture', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       if (response.data.success) {
         setProfileData(prev => ({ ...prev, profilePicture: response.data.profilePictureUrl }));
         setSuccess('Profile picture uploaded successfully!');
         setTimeout(() => setSuccess(''), 3000);
         await fetchSettings();
-        
         localStorage.setItem('profilePictureUpdated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('profilePictureChanged'));
       } else {
@@ -309,7 +245,6 @@ export default function Settings() {
         setProfileData(prev => ({ ...prev, profilePicture: '' }));
         setSuccess('Profile picture removed successfully!');
         setTimeout(() => setSuccess(''), 3000);
-        
         localStorage.setItem('profilePictureUpdated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('profilePictureChanged'));
       } else {
@@ -329,6 +264,14 @@ export default function Settings() {
       setError('Please enter a valid URL starting with http:// or https://');
       return;
     }
+    if (professionalProfileData.useAvailabilityWindow) {
+      if (!professionalProfileData.availableFromLocal || !professionalProfileData.availableUntilLocal) {
+        setError('Please choose both availability start and end times.'); return;
+      }
+      if (new Date(professionalProfileData.availableUntilLocal) <= new Date(professionalProfileData.availableFromLocal)) {
+        setError('Availability end time must be after the start time.'); return;
+      }
+    }
     setSaving(true); setError(''); setSuccess('');
     try {
       await API.put('/auth/update-profile', {
@@ -345,7 +288,11 @@ export default function Settings() {
           ? (professionalProfileData.externalProfileUrl.startsWith('http')
               ? professionalProfileData.externalProfileUrl
               : `https://${professionalProfileData.externalProfileUrl}`)
-          : null
+          : null,
+        isAcceptingSessions:    professionalProfileData.isAcceptingSessions,
+        availableFromUtc:       professionalProfileData.useAvailabilityWindow ? toUtcIso(professionalProfileData.availableFromLocal) : null,
+        availableUntilUtc:      professionalProfileData.useAvailabilityWindow ? toUtcIso(professionalProfileData.availableUntilLocal) : null,
+        clearAvailabilityWindow: !professionalProfileData.useAvailabilityWindow
       });
 
       localStorage.setItem('firstName', profileData.firstName);
@@ -356,6 +303,7 @@ export default function Settings() {
 
       setSuccess('Professional profile updated successfully!');
       setTimeout(() => setSuccess(''), 3000);
+      await fetchSettings();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to update professional profile');
     } finally {
@@ -363,14 +311,32 @@ export default function Settings() {
     }
   };
 
+  // Client profile update – includes emergency contact fields
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
+    if (role === 'Client') {
+      if (!emergencyContact.emergencyContactName.trim()) {
+        setError('Emergency contact name is required.');
+        return;
+      }
+      if (!isValidLocalPhoneNumber(emergencyContact.emergencyContactPhone)) {
+        setError('Emergency contact phone must use the format 0712345678 or 0112345678.');
+        return;
+      }
+      if (!emergencyContact.emergencyContactEmail.trim() || !/\S+@\S+\.\S+/.test(emergencyContact.emergencyContactEmail.trim())) {
+        setError('Please enter a valid emergency contact email.');
+        return;
+      }
+    }
     setSaving(true); setError(''); setSuccess('');
     try {
       await API.put('/auth/update-profile', {
         firstName:   profileData.firstName,
         lastName:    profileData.lastName,
-        phoneNumber: profileData.phoneNumber
+        phoneNumber: normalizePhoneNumber(profileData.phoneNumber),
+        emergencyContactName:  emergencyContact.emergencyContactName,
+        emergencyContactPhone: normalizePhoneNumber(emergencyContact.emergencyContactPhone),
+        emergencyContactEmail: emergencyContact.emergencyContactEmail.trim()
       });
 
       if (profilePictureFile) await uploadProfilePicture();
@@ -381,6 +347,7 @@ export default function Settings() {
 
       setSuccess('Profile updated successfully!');
       setTimeout(() => setSuccess(''), 3000);
+      await fetchSettings();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to update profile');
     } finally {
@@ -391,7 +358,7 @@ export default function Settings() {
   const handlePasswordUpdate = async (e) => {
     e.preventDefault();
     if (passwordData.newPassword !== passwordData.confirmPassword) { setError('New passwords do not match'); return; }
-    if (passwordData.newPassword.length < 8)                       { setError('Password must be at least 8 characters'); return; }
+    if (passwordData.newPassword.length < 8) { setError('Password must be at least 8 characters'); return; }
     setSaving(true); setError(''); setSuccess('');
     try {
       await API.put('/auth/update-password', {
@@ -411,72 +378,31 @@ export default function Settings() {
   };
 
   const handleReminderChange = (category, subcategory, key, value) => {
+    let updated;
     if (subcategory === null) {
-      const updated = {
-        ...reminderSettings,
-        [category]: {
-          ...reminderSettings[category],
-          [key]: value
-        }
-      };
-      setReminderSettings(updated);
-      localStorage.setItem('reminderSettings', JSON.stringify(updated));
-      setSuccess('Settings updated');
-      setTimeout(() => setSuccess(''), 2000);
+      updated = { ...reminderSettings, [category]: { ...reminderSettings[category], [key]: value } };
     } else {
-      const updated = {
-        ...reminderSettings,
-        [category]: {
-          ...reminderSettings[category],
-          [subcategory]: {
-            ...reminderSettings[category]?.[subcategory],
-            [key]: value
-          }
-        }
-      };
-      setReminderSettings(updated);
-      localStorage.setItem('reminderSettings', JSON.stringify(updated));
-      setSuccess('Settings updated');
-      setTimeout(() => setSuccess(''), 2000);
+      updated = { ...reminderSettings, [category]: { ...reminderSettings[category], [subcategory]: { ...reminderSettings[category]?.[subcategory], [key]: value } } };
     }
+    setReminderSettings(updated);
+    localStorage.setItem('reminderSettings', JSON.stringify(updated));
+    setSuccess('Settings updated'); setTimeout(() => setSuccess(''), 2000);
   };
 
   const handleReminderDaysChange = (category, subcategory, day) => {
     const currentDays = reminderSettings[category]?.[subcategory]?.reminderDays || [];
-    const updatedDays = currentDays.includes(day)
-      ? currentDays.filter(d => d !== day)
-      : [...currentDays, day];
-    
-    const updated = {
-      ...reminderSettings,
-      [category]: {
-        ...reminderSettings[category],
-        [subcategory]: {
-          ...reminderSettings[category]?.[subcategory],
-          reminderDays: updatedDays
-        }
-      }
-    };
+    const updatedDays = currentDays.includes(day) ? currentDays.filter(d => d !== day) : [...currentDays, day];
+    const updated = { ...reminderSettings, [category]: { ...reminderSettings[category], [subcategory]: { ...reminderSettings[category]?.[subcategory], reminderDays: updatedDays } } };
     setReminderSettings(updated);
     localStorage.setItem('reminderSettings', JSON.stringify(updated));
-    setSuccess('Reminder days updated'); 
-    setTimeout(() => setSuccess(''), 2000);
+    setSuccess('Reminder days updated'); setTimeout(() => setSuccess(''), 2000);
   };
 
   const handleProfessionalChange = (key, value) => {
     const updated = { ...professionalSettings, [key]: value };
     setProfessionalSettings(updated);
     localStorage.setItem('professionalSettings', JSON.stringify(updated));
-    setSuccess('Professional settings saved'); 
-    setTimeout(() => setSuccess(''), 2000);
-  };
-
-  const handleAdminChange = (key, value) => {
-    const updated = { ...adminSettings, [key]: value };
-    setAdminSettings(updated);
-    localStorage.setItem('adminSettings', JSON.stringify(updated));
-    setSuccess('Admin settings saved'); 
-    setTimeout(() => setSuccess(''), 2000);
+    setSuccess('Professional settings saved'); setTimeout(() => setSuccess(''), 2000);
   };
 
   const inputStyle = {
@@ -494,13 +420,12 @@ export default function Settings() {
   });
 
   const tabs = [
-    { id: 'profile',      label: 'Profile',      icon: '👤' },
-    { id: 'appearance',   label: 'Appearance',   icon: '🎨' },
-    { id: 'security',     label: 'Security',     icon: '🔒' },
-    { id: 'notifications',label: 'Notifications & Reminders', icon: '🔔' }
+    { id: 'profile',       label: 'Profile',       icon: '👤' },
+    { id: 'appearance',    label: 'Appearance',    icon: '🎨' },
+    { id: 'security',      label: 'Security',      icon: '🔒' },
+    { id: 'notifications', label: 'Notifications & Reminders', icon: '🔔' }
   ];
   if (role === 'Professional') tabs.push({ id: 'professional-settings', label: 'Preferences', icon: '⚙️' });
-  if (role === 'Admin')        tabs.push({ id: 'admin',                  label: 'Admin',       icon: '⚙️' });
 
   const ProfilePictureBlock = () => (
     <div style={{ marginBottom: 24 }}>
@@ -511,28 +436,22 @@ export default function Settings() {
         <div style={{ width: 100, height: 100, borderRadius: '50%', background: 'linear-gradient(135deg, #e91e8c, #9c27b0)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
           {profilePicturePreview
             ? <img src={profilePicturePreview} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <span style={{ fontSize: 42, color: 'white' }}>
-                {profileData.firstName?.charAt(0).toUpperCase()}{profileData.lastName?.charAt(0).toUpperCase()}
-              </span>
+            : <span style={{ fontSize: 42, color: 'white' }}>{profileData.firstName?.charAt(0).toUpperCase()}{profileData.lastName?.charAt(0).toUpperCase()}</span>
           }
         </div>
         <div style={{ flex: 1 }}>
           <input type="file" ref={fileInputRef} onChange={handleProfilePictureChange} accept="image/*" style={{ display: 'none' }} />
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingPicture}
-              style={pictureBtnStyle('white', 'linear-gradient(135deg, #e91e8c, #9c27b0)')}>
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingPicture} style={pictureBtnStyle('white', 'linear-gradient(135deg, #e91e8c, #9c27b0)')}>
               📷 {uploadingPicture ? 'Uploading...' : 'Upload Picture'}
             </button>
             {profilePicturePreview && (
-              <button type="button" onClick={removeProfilePicture} disabled={uploadingPicture}
-                style={pictureBtnStyle('#e53e3e', 'transparent')}>
+              <button type="button" onClick={removeProfilePicture} disabled={uploadingPicture} style={pictureBtnStyle('#e53e3e', 'transparent')}>
                 🗑️ Remove
               </button>
             )}
           </div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Recommended: Square image, max 5MB (JPG, PNG, GIF)
-          </p>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Recommended: Square image, max 5MB (JPG, PNG, GIF)</p>
         </div>
       </div>
     </div>
@@ -559,10 +478,8 @@ export default function Settings() {
   );
 
   const ReminderSection = ({ title, icon, reminders, category }) => {
-    // Get the category object safely
     const categoryData = reminderSettings[category];
     if (!categoryData) return null;
-
     return (
       <div style={{ marginBottom: 24 }}>
         <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#e91e8c', borderLeft: '3px solid #e91e8c', paddingLeft: 10 }}>
@@ -572,7 +489,6 @@ export default function Settings() {
           {Object.entries(reminders).map(([key, config]) => {
             const reminder = categoryData[key];
             if (!reminder) return null;
-            
             return (
               <div key={key} style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: reminder.enabled ? 12 : 0 }}>
@@ -610,20 +526,8 @@ export default function Settings() {
                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Reminder Days</label>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => (
-                            <button
-                              key={day}
-                              type="button"
-                              onClick={() => handleReminderDaysChange(category, key, day)}
-                              style={{
-                                padding: '6px 12px',
-                                borderRadius: 20,
-                                fontSize: 12,
-                                border: `1px solid ${(reminder.reminderDays || []).includes(day) ? '#e91e8c' : 'var(--border)'}`,
-                                background: (reminder.reminderDays || []).includes(day) ? 'rgba(233,30,140,0.1)' : 'transparent',
-                                color: (reminder.reminderDays || []).includes(day) ? '#e91e8c' : 'var(--text-secondary)',
-                                cursor: 'pointer'
-                              }}
-                            >
+                            <button key={day} type="button" onClick={() => handleReminderDaysChange(category, key, day)}
+                              style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12, border: `1px solid ${(reminder.reminderDays || []).includes(day) ? '#e91e8c' : 'var(--border)'}`, background: (reminder.reminderDays || []).includes(day) ? 'rgba(233,30,140,0.1)' : 'transparent', color: (reminder.reminderDays || []).includes(day) ? '#e91e8c' : 'var(--text-secondary)', cursor: 'pointer' }}>
                               {day.charAt(0).toUpperCase() + day.slice(1)}
                             </button>
                           ))}
@@ -676,100 +580,26 @@ export default function Settings() {
     );
   };
 
-  // Define reminder configurations for each role
   const clientReminderConfigs = {
-    sessionStartReminder: {
-      label: '⏰ Session Start Reminder',
-      description: 'Get reminded before your session begins',
-      hasMinutesBefore: true,
-      hasPushNotification: true,
-      hasEmailNotification: true
-    },
-    journalReminder: {
-      label: '📝 Journal Reminder',
-      description: 'Get reminded to write in your journal',
-      hasReminderTime: true,
-      hasReminderDays: true,
-      hasPushNotification: true,
-      hasEmailNotification: true
-    },
-    paymentProcessedReminder: {
-      label: '💰 Payment Confirmation',
-      description: 'Get notified when your payment is processed',
-      hasPushNotification: true,
-      hasEmailNotification: true
-    },
-    assessmentReminder: {
-      label: '📊 Assessment Reminder',
-      description: 'Get reminded to complete regular assessments',
-      hasFrequency: true,
-      hasPushNotification: true,
-      hasEmailNotification: true
-    },
-    sessionFeedbackReminder: {
-      label: '⭐ Session Feedback Reminder',
-      description: 'Get reminded to provide feedback after sessions',
-      hasHoursAfter: true,
-      hasPushNotification: true,
-      hasEmailNotification: true
-    }
+    sessionStartReminder:    { label: '⏰ Session Start Reminder',    description: 'Get reminded before your session begins',             hasMinutesBefore: true, hasPushNotification: true, hasEmailNotification: true },
+    journalReminder:         { label: '📝 Journal Reminder',          description: 'Get reminded to write in your journal',              hasReminderTime: true, hasReminderDays: true, hasPushNotification: true, hasEmailNotification: true },
+    paymentProcessedReminder:{ label: '💰 Payment Confirmation',      description: 'Get notified when your payment is processed',        hasPushNotification: true, hasEmailNotification: true },
+    assessmentReminder:      { label: '📊 Assessment Reminder',       description: 'Get reminded to complete regular assessments',       hasFrequency: true, hasPushNotification: true, hasEmailNotification: true },
+    sessionFeedbackReminder: { label: '⭐ Session Feedback Reminder', description: 'Get reminded to provide feedback after sessions',    hasHoursAfter: true, hasPushNotification: true, hasEmailNotification: true }
   };
 
   const professionalReminderConfigs = {
-    sessionStartReminder: {
-      label: '⏰ Session Start Reminder',
-      description: 'Get reminded before your client session begins',
-      hasMinutesBefore: true,
-      hasPushNotification: true,
-      hasEmailNotification: true
-    },
-    professionalPaidReminder: {
-      label: '💰 Payment Received',
-      description: 'Get notified when you receive payment',
-      hasPushNotification: true,
-      hasEmailNotification: true
-    },
-    newSessionBookedReminder: {
-      label: '📅 New Session Booked',
-      description: 'Get notified when a client books a session with you',
-      hasPushNotification: true,
-      hasEmailNotification: true
-    },
-    sessionCancelledReminder: {
-      label: '❌ Session Cancelled',
-      description: 'Get notified when a client cancels a session',
-      hasPushNotification: true,
-      hasEmailNotification: true
-    }
+    sessionStartReminder:       { label: '⏰ Session Start Reminder',  description: 'Get reminded before your client session begins',     hasMinutesBefore: true, hasPushNotification: true, hasEmailNotification: true },
+    professionalPaidReminder:   { label: '💰 Payment Received',        description: 'Get notified when you receive payment',              hasPushNotification: true, hasEmailNotification: true },
+    newSessionBookedReminder:   { label: '📅 New Session Booked',      description: 'Get notified when a client books a session with you',hasPushNotification: true, hasEmailNotification: true },
+    sessionCancelledReminder:   { label: '❌ Session Cancelled',       description: 'Get notified when a client cancels a session',       hasPushNotification: true, hasEmailNotification: true }
   };
 
   const adminReminderConfigs = {
-    adminPaymentProcessingReminder: {
-      label: '🏦 Payment Processing Reminder',
-      description: 'Get reminded to process professional payments',
-      hasFrequency: true,
-      hasEmailNotification: true,
-      hasPushNotification: false
-    },
-    newProfessionalRegistrationReminder: {
-      label: '👨‍⚕️ New Professional Registration',
-      description: 'Get notified when a new professional registers',
-      hasEmailNotification: true,
-      hasPushNotification: false
-    },
-    platformReportReminder: {
-      label: '📊 Platform Report Reminder',
-      description: 'Get reminded to review weekly platform reports',
-      hasFrequency: true,
-      hasEmailNotification: true,
-      hasPushNotification: false
-    },
-    lowStockAlert: {
-      label: '⚠️ Low Stock Alert',
-      description: 'Receive alerts when resources are running low',
-      hasEmailNotification: true,
-      hasPushNotification: false
-    }
+    adminPaymentProcessingReminder:      { label: '🏦 Payment Processing Reminder',    description: 'Get reminded to process professional payments',      hasFrequency: true, hasEmailNotification: true, hasPushNotification: false },
+    newProfessionalRegistrationReminder: { label: '👨🏾‍⚕️ New Professional Registration', description: 'Get notified when a new professional registers',      hasEmailNotification: true, hasPushNotification: false },
+    platformReportReminder:              { label: '📊 Platform Report Reminder',       description: 'Get reminded to review weekly platform reports',      hasFrequency: true, hasEmailNotification: true, hasPushNotification: false },
+    lowStockAlert:                       { label: '⚠️ Low Stock Alert',               description: 'Receive alerts when resources are running low',       hasEmailNotification: true, hasPushNotification: false }
   };
 
   return (
@@ -792,9 +622,9 @@ export default function Settings() {
 
       {/* Alerts */}
       {error   && <div style={{ background: 'rgba(233,30,140,0.1)', color: '#e91e8c', padding: '12px 16px', borderRadius: 12, marginBottom: 20, borderLeft: '3px solid #e91e8c' }}>{error}</div>}
-      {success && <div style={{ background: 'rgba(76,175,80,0.1)',  color: '#4caf50',  padding: '12px 16px', borderRadius: 12, marginBottom: 20, borderLeft: '3px solid #4caf50'  }}>{success}</div>}
+      {success && <div style={{ background: 'rgba(76,175,80,0.1)',  color: '#4caf50', padding: '12px 16px', borderRadius: 12, marginBottom: 20, borderLeft: '3px solid #4caf50'  }}>{success}</div>}
 
-      {/* ── Professional Profile Tab ── */}
+      {/* Professional Profile Tab */}
       {activeTab === 'profile' && role === 'Professional' && (
         <div style={card}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Professional Profile</h2>
@@ -822,26 +652,19 @@ export default function Settings() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Phone Number</label>
-                <input type="tel" value={profileData.phoneNumber} onChange={e => setProfileData({ ...profileData, phoneNumber: e.target.value })} placeholder="254712345678" style={inputStyle} />
+                <input type="tel" value={profileData.phoneNumber} onChange={e => setProfileData({ ...profileData, phoneNumber: normalizePhoneNumber(e.target.value) })} placeholder="0712345678" style={inputStyle} />
               </div>
             </div>
 
             <div style={{ marginBottom: 24 }}>
               <h3 style={sectionTitle('#9c27b0')}>Professional Information</h3>
-
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>License/Certification Number *</label>
                 <input type="text" value={professionalProfileData.licenseNumber} onChange={e => setProfessionalProfileData({ ...professionalProfileData, licenseNumber: e.target.value })} placeholder="e.g., KMPDC-2024-12345" required style={inputStyle} />
               </div>
-
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Specialization *</label>
-                <select 
-                  value={professionalProfileData.specialization} 
-                  onChange={e => setProfessionalProfileData({ ...professionalProfileData, specialization: e.target.value })} 
-                  required 
-                  style={inputStyle}
-                >
+                <select value={professionalProfileData.specialization} onChange={e => setProfessionalProfileData({ ...professionalProfileData, specialization: e.target.value })} required style={inputStyle}>
                   <option value="">Select specialization</option>
                   <option value="Anxiety">Anxiety</option>
                   <option value="Depression">Depression</option>
@@ -849,7 +672,6 @@ export default function Settings() {
                   <option value="General">General</option>
                 </select>
               </div>
-
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Years of Experience *</label>
                 <select value={professionalProfileData.yearsOfExperience} onChange={e => setProfessionalProfileData({ ...professionalProfileData, yearsOfExperience: e.target.value })} required style={inputStyle}>
@@ -861,22 +683,18 @@ export default function Settings() {
                   <option value="10+">10+ years</option>
                 </select>
               </div>
-
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Bio *</label>
                 <textarea value={professionalProfileData.bio} onChange={e => setProfessionalProfileData({ ...professionalProfileData, bio: e.target.value })} placeholder="Tell clients about your experience and approach..." rows={4} required style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
               </div>
-
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Education & Qualifications</label>
                 <textarea value={professionalProfileData.education} onChange={e => setProfessionalProfileData({ ...professionalProfileData, education: e.target.value })} placeholder="e.g., MSc Clinical Psychology - University of Nairobi (2018)" rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
               </div>
-
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Certifications & Awards</label>
                 <textarea value={professionalProfileData.certifications} onChange={e => setProfessionalProfileData({ ...professionalProfileData, certifications: e.target.value })} placeholder="e.g., Certified CBT Practitioner (2020)" rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
               </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>External Professional Profile URL</label>
                 <input type="url" value={professionalProfileData.externalProfileUrl} onChange={e => setProfessionalProfileData({ ...professionalProfileData, externalProfileUrl: e.target.value })} placeholder="https://linkedin.com/in/your-profile" style={inputStyle} />
@@ -884,12 +702,37 @@ export default function Settings() {
               </div>
             </div>
 
+            <div style={{ marginBottom: 24 }}>
+              <h3 style={sectionTitle('#e91e8c')}>Session Availability</h3>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14 }}>
+                <input type="checkbox" checked={professionalProfileData.isAcceptingSessions} onChange={e => setProfessionalProfileData({ ...professionalProfileData, isAcceptingSessions: e.target.checked })} style={{ accentColor: '#e91e8c' }} />
+                Accept session bookings
+              </label>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '-6px 0 16px' }}>Turn this off when you are away or unable to conduct sessions.</p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14 }}>
+                <input type="checkbox" checked={professionalProfileData.useAvailabilityWindow} onChange={e => setProfessionalProfileData({ ...professionalProfileData, useAvailabilityWindow: e.target.checked })} style={{ accentColor: '#9c27b0' }} />
+                Limit bookings to a specific date and time window
+              </label>
+              {professionalProfileData.useAvailabilityWindow && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Available From</label>
+                    <input type="datetime-local" value={professionalProfileData.availableFromLocal} onChange={e => setProfessionalProfileData({ ...professionalProfileData, availableFromLocal: e.target.value })} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Available Until</label>
+                    <input type="datetime-local" value={professionalProfileData.availableUntilLocal} onChange={e => setProfessionalProfileData({ ...professionalProfileData, availableUntilLocal: e.target.value })} style={inputStyle} />
+                  </div>
+                </div>
+              )}
+            </div>
+
             {saveBtn('Save Professional Profile')}
           </form>
         </div>
       )}
 
-      {/* ── Client / Admin Profile Tab ── */}
+      {/* Client / Admin Profile Tab (with Emergency Contact for Client) */}
       {activeTab === 'profile' && role !== 'Professional' && (
         <div style={card}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Profile Information</h2>
@@ -917,15 +760,64 @@ export default function Settings() {
 
             <div style={{ marginBottom: 24 }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Phone Number</label>
-              <input type="tel" value={profileData.phoneNumber} onChange={e => setProfileData({ ...profileData, phoneNumber: e.target.value })} placeholder="254712345678" style={inputStyle} />
+              <input type="tel" value={profileData.phoneNumber} onChange={e => setProfileData({ ...profileData, phoneNumber: normalizePhoneNumber(e.target.value) })} placeholder="0712345678" style={inputStyle} />
             </div>
+
+            {/* Emergency Contact Section (Client only) */}
+            {role === 'Client' && (
+              <div style={{ marginBottom: 24 }}>
+                <h3 style={sectionTitle('#e91e8c')}>🚨 Emergency Contact</h3>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16, marginTop: -8 }}>
+                  This contact may be reached by a professional in a mental health emergency during a session.
+                </p>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={emergencyContact.emergencyContactName}
+                    onChange={e => setEmergencyContact({ ...emergencyContact, emergencyContactName: e.target.value })}
+                    placeholder="e.g., Jane Doe"
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={emergencyContact.emergencyContactPhone}
+                    onChange={e => setEmergencyContact({ ...emergencyContact, emergencyContactPhone: normalizePhoneNumber(e.target.value) })}
+                    placeholder="e.g., 0712345678"
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={emergencyContact.emergencyContactEmail}
+                    onChange={e => setEmergencyContact({ ...emergencyContact, emergencyContactEmail: e.target.value })}
+                    placeholder="trusted.contact@example.com"
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+            )}
 
             {saveBtn('Save Changes')}
           </form>
         </div>
       )}
 
-      {/* ── Appearance Tab ── */}
+      {/* Appearance Tab */}
       {activeTab === 'appearance' && (
         <div style={card}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Theme Preferences</h2>
@@ -945,110 +837,77 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ── MERGED: Notifications & Reminders Tab ── */}
+      {/* Notifications & Reminders Tab */}
       {activeTab === 'notifications' && (
         <div style={card}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Notifications & Reminders</h2>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>Configure how and when you receive alerts</p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            
-            {/* Browser Notifications Section */}
-            <div style={{ padding: 16, background: 'linear-gradient(135deg, rgba(233,30,140,0.1), rgba(156,39,176,0.1))', borderRadius: 12, border: `2px solid #e91e8c` }}>
+
+            {/* Browser Notifications */}
+            <div style={{ padding: 16, background: 'linear-gradient(135deg, rgba(233,30,140,0.1), rgba(156,39,176,0.1))', borderRadius: 12, border: '2px solid #e91e8c' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div>
                   <h4 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#e91e8c' }}>🔔 Real-Time Browser Notifications</h4>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                    Get instant pop-up notifications even when you're not on the page
-                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Get instant pop-up notifications even when you're not on the page</p>
+                  <button type="button" onClick={sendTestNotification}
+                    style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, border: '1px solid #e91e8c', background: 'transparent', color: '#e91e8c', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                    Send Test Notification
+                  </button>
                 </div>
                 <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={reminderSettings.browserNotifications?.enabled || false} 
+                  <input type="checkbox" checked={reminderSettings.browserNotifications?.enabled || false}
                     onChange={async (e) => {
                       if (e.target.checked) {
                         const granted = await requestBrowserNotificationPermission();
-                        if (granted) {
-                          handleReminderChange('browserNotifications', null, 'enabled', true);
-                        } else {
-                          setError('Please enable browser notifications in your browser settings');
-                          e.target.checked = false;
-                        }
-                      } else {
-                        handleReminderChange('browserNotifications', null, 'enabled', false);
-                      }
-                    }} 
-                  />
+                        if (granted) { handleReminderChange('browserNotifications', null, 'enabled', true); }
+                        else { setError('Please enable browser notifications in your browser settings'); e.target.checked = false; }
+                      } else { handleReminderChange('browserNotifications', null, 'enabled', false); }
+                    }} />
                   <span className="slider round" />
                 </label>
               </div>
               {reminderSettings.browserNotifications?.enabled && (
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(233,30,140,0.3)' }}>
-                  <div>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      Permission status: 
-                      <strong style={{ color: browserNotificationPermission === 'granted' ? '#4caf50' : '#ff9800', marginLeft: 4 }}>
-                        {browserNotificationPermission === 'granted' ? '✅ Allowed' : browserNotificationPermission === 'denied' ? '❌ Blocked' : '⚠️ Not requested'}
-                      </strong>
-                    </span>
-                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Permission status:
+                    <strong style={{ color: browserNotificationPermission === 'granted' ? '#4caf50' : '#ff9800', marginLeft: 4 }}>
+                      {browserNotificationPermission === 'granted' ? '✅ Allowed' : browserNotificationPermission === 'denied' ? '❌ Blocked' : '⚠️ Not requested'}
+                    </strong>
+                  </span>
                   <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-                    💡 Real-time notifications work in Chrome, Firefox, Edge, and Safari. You'll see pop-ups for session reminders, payments, and updates.
+                    💡 Real-time notifications work in Chrome, Firefox, Edge, and Safari.
                   </p>
                 </div>
               )}
             </div>
 
-            {/* Email Notifications Master Toggle */}
+            {/* Email Master Toggle */}
             <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h4 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>📧 Email Notifications</h4>
                   <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Master toggle for all email alerts</p>
                 </div>
                 <label className="switch">
-                  <input type="checkbox" checked={reminderSettings.emailNotifications?.enabled || false} onChange={(e) => {
-                    const updated = { ...reminderSettings, emailNotifications: { enabled: e.target.checked } };
-                    setReminderSettings(updated);
-                    localStorage.setItem('reminderSettings', JSON.stringify(updated));
-                    setSuccess('Email notifications updated');
-                    setTimeout(() => setSuccess(''), 2000);
-                  }} />
+                  <input type="checkbox" checked={reminderSettings.emailNotifications?.enabled || false}
+                    onChange={(e) => {
+                      const updated = { ...reminderSettings, emailNotifications: { enabled: e.target.checked } };
+                      setReminderSettings(updated);
+                      localStorage.setItem('reminderSettings', JSON.stringify(updated));
+                      setSuccess('Email notifications updated'); setTimeout(() => setSuccess(''), 2000);
+                    }} />
                   <span className="slider round" />
                 </label>
               </div>
             </div>
 
-            {/* Role-specific reminders sections */}
-            {role === 'Client' && reminderSettings.clientReminders && (
-              <ReminderSection 
-                title="Client Reminders" 
-                icon="👤" 
-                reminders={clientReminderConfigs} 
-                category="clientReminders" 
-              />
-            )}
+            {role === 'Client'       && reminderSettings.clientReminders       && <ReminderSection title="Client Reminders"       icon="👤"      reminders={clientReminderConfigs}       category="clientReminders" />}
+            {role === 'Professional' && reminderSettings.professionalReminders  && <ReminderSection title="Professional Reminders" icon="👨🏾‍⚕️"    reminders={professionalReminderConfigs}  category="professionalReminders" />}
+            {role === 'Admin'        && reminderSettings.adminReminders         && <ReminderSection title="Admin Reminders"        icon="👑"      reminders={adminReminderConfigs}         category="adminReminders" />}
 
-            {role === 'Professional' && reminderSettings.professionalReminders && (
-              <ReminderSection 
-                title="Professional Reminders" 
-                icon="👨‍⚕️" 
-                reminders={professionalReminderConfigs} 
-                category="professionalReminders" 
-              />
-            )}
-
-            {role === 'Admin' && reminderSettings.adminReminders && (
-              <ReminderSection 
-                title="Admin Reminders" 
-                icon="👑" 
-                reminders={adminReminderConfigs} 
-                category="adminReminders" 
-              />
-            )}
-
-            {/* Platform Updates (visible to all roles) */}
+            {/* Platform Updates */}
             <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div>
@@ -1056,55 +915,47 @@ export default function Settings() {
                   <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Receive news about new features and platform improvements</p>
                 </div>
                 <label className="switch">
-                  <input type="checkbox" checked={reminderSettings.platformUpdates?.enabled || false} onChange={(e) => {
-                    const updated = { ...reminderSettings, platformUpdates: { ...reminderSettings.platformUpdates, enabled: e.target.checked } };
-                    setReminderSettings(updated);
-                    localStorage.setItem('reminderSettings', JSON.stringify(updated));
-                    setSuccess('Platform updates updated');
-                    setTimeout(() => setSuccess(''), 2000);
-                  }} />
+                  <input type="checkbox" checked={reminderSettings.platformUpdates?.enabled || false}
+                    onChange={(e) => {
+                      const updated = { ...reminderSettings, platformUpdates: { ...reminderSettings.platformUpdates, enabled: e.target.checked } };
+                      setReminderSettings(updated); localStorage.setItem('reminderSettings', JSON.stringify(updated));
+                      setSuccess('Platform updates updated'); setTimeout(() => setSuccess(''), 2000);
+                    }} />
                   <span className="slider round" />
                 </label>
               </div>
               {reminderSettings.platformUpdates?.enabled && (
-                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', gap: 16 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                      <input type="checkbox" checked={reminderSettings.platformUpdates?.pushNotification || false} onChange={(e) => {
-                        const updated = { ...reminderSettings, platformUpdates: { ...reminderSettings.platformUpdates, pushNotification: e.target.checked } };
-                        setReminderSettings(updated);
-                        localStorage.setItem('reminderSettings', JSON.stringify(updated));
-                      }} disabled={!reminderSettings.browserNotifications?.enabled} />
-                      Push Notification
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                      <input type="checkbox" checked={reminderSettings.platformUpdates?.emailNotification || false} onChange={(e) => {
-                        const updated = { ...reminderSettings, platformUpdates: { ...reminderSettings.platformUpdates, emailNotification: e.target.checked } };
-                        setReminderSettings(updated);
-                        localStorage.setItem('reminderSettings', JSON.stringify(updated));
-                      }} disabled={!reminderSettings.emailNotifications?.enabled} />
-                      Email
-                    </label>
-                  </div>
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 16 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <input type="checkbox" checked={reminderSettings.platformUpdates?.pushNotification || false}
+                      onChange={(e) => { const u = { ...reminderSettings, platformUpdates: { ...reminderSettings.platformUpdates, pushNotification: e.target.checked } }; setReminderSettings(u); localStorage.setItem('reminderSettings', JSON.stringify(u)); }}
+                      disabled={!reminderSettings.browserNotifications?.enabled} />
+                    Push Notification
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <input type="checkbox" checked={reminderSettings.platformUpdates?.emailNotification || false}
+                      onChange={(e) => { const u = { ...reminderSettings, platformUpdates: { ...reminderSettings.platformUpdates, emailNotification: e.target.checked } }; setReminderSettings(u); localStorage.setItem('reminderSettings', JSON.stringify(u)); }}
+                      disabled={!reminderSettings.emailNotifications?.enabled} />
+                    Email
+                  </label>
                 </div>
               )}
             </div>
 
-            {/* Marketing Emails (visible to all roles) */}
+            {/* Marketing Emails */}
             <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h4 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>📧 Marketing Emails</h4>
                   <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Receive promotional offers and updates about our services</p>
                 </div>
                 <label className="switch">
-                  <input type="checkbox" checked={reminderSettings.marketingEmails?.enabled || false} onChange={(e) => {
-                    const updated = { ...reminderSettings, marketingEmails: { enabled: e.target.checked } };
-                    setReminderSettings(updated);
-                    localStorage.setItem('reminderSettings', JSON.stringify(updated));
-                    setSuccess('Marketing emails updated');
-                    setTimeout(() => setSuccess(''), 2000);
-                  }} />
+                  <input type="checkbox" checked={reminderSettings.marketingEmails?.enabled || false}
+                    onChange={(e) => {
+                      const updated = { ...reminderSettings, marketingEmails: { enabled: e.target.checked } };
+                      setReminderSettings(updated); localStorage.setItem('reminderSettings', JSON.stringify(updated));
+                      setSuccess('Marketing emails updated'); setTimeout(() => setSuccess(''), 2000);
+                    }} />
                   <span className="slider round" />
                 </label>
               </div>
@@ -1114,18 +965,17 @@ export default function Settings() {
 
           <div style={{ marginTop: 24, padding: 12, background: 'rgba(76,175,80,0.1)', borderRadius: 8, borderLeft: '3px solid #4caf50' }}>
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
-              ✅ <strong>Real-time notifications work!</strong> Once enabled, you'll receive instant pop-up notifications for your relevant reminders - even when you're not actively using the platform!
+              ✅ <strong>Real-time notifications work!</strong> Once enabled, you'll receive instant pop-up notifications for your relevant reminders.
             </p>
           </div>
         </div>
       )}
 
-      {/* ── Security Tab ── */}
+      {/* Security Tab */}
       {activeTab === 'security' && (
         <div style={card}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Security Settings</h2>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>Manage your password and security preferences</p>
-
           {!showPasswordForm ? (
             <button onClick={() => setShowPasswordForm(true)}
               style={{ width: '100%', padding: 14, background: 'transparent', border: '2px solid #e91e8c', borderRadius: 10, color: '#e91e8c', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
@@ -1135,7 +985,7 @@ export default function Settings() {
             <form onSubmit={handlePasswordUpdate}>
               {[
                 { key: 'currentPassword', label: 'Current Password' },
-                { key: 'newPassword',     label: 'New Password',     hint: 'At least 8 characters with uppercase, lowercase, and special character' },
+                { key: 'newPassword',     label: 'New Password', hint: 'At least 8 characters with uppercase, lowercase, and special character' },
                 { key: 'confirmPassword', label: 'Confirm New Password' }
               ].map(f => (
                 <div key={f.key} style={{ marginBottom: 16 }}>
@@ -1159,7 +1009,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ── Professional Preferences Tab ── */}
+      {/* Professional Preferences Tab */}
       {activeTab === 'professional-settings' && role === 'Professional' && (
         <div style={card}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Professional Preferences</h2>
@@ -1168,10 +1018,10 @@ export default function Settings() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Auto-confirm Sessions</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Automatically confirm session requests</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Available professionals now receive confirmed bookings automatically</div>
               </div>
               <label className="switch">
-                <input type="checkbox" checked={professionalSettings.autoConfirmSessions} onChange={e => handleProfessionalChange('autoConfirmSessions', e.target.checked)} />
+                <input type="checkbox" checked disabled />
                 <span className="slider round" />
               </label>
             </div>
@@ -1191,31 +1041,6 @@ export default function Settings() {
                 <option value="Asia/Dubai">Asia/Dubai (GST)</option>
               </select>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Admin Settings Tab ── */}
-      {activeTab === 'admin' && role === 'Admin' && (
-        <div style={card}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Admin Settings</h2>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>Manage platform administration preferences</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {[
-              { key: 'lowStockAlert',  label: 'Low Stock Alerts',  sub: 'Receive alerts when resources are low' },
-              { key: 'weeklyReports',  label: 'Weekly Reports',    sub: 'Receive weekly platform reports via email' }
-            ].map(item => (
-              <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{item.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.sub}</div>
-                </div>
-                <label className="switch">
-                  <input type="checkbox" checked={adminSettings[item.key]} onChange={e => handleAdminChange(item.key, e.target.checked)} />
-                  <span className="slider round" />
-                </label>
-              </div>
-            ))}
           </div>
         </div>
       )}

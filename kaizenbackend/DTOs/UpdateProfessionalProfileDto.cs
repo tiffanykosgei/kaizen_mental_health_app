@@ -1,21 +1,31 @@
+using System;
+
 namespace kaizenbackend.DTOs
 {
     public class UpdateProfessionalProfileDto
     {
-        public string? FirstName          { get; set; }
-        public string? LastName           { get; set; }
-        public string? PhoneNumber        { get; set; }
-        public string? Bio                { get; set; }
-        public string? Specialization     { get; set; }
-        public string? YearsOfExperience  { get; set; }
-        public string? Education          { get; set; }
-        public string? Certifications     { get; set; }
-        public string? LicenseNumber      { get; set; }
-        public string? Password           { get; set; }
-        public string? Experience         { get; set; }
+        // Basic user info (shared by all roles)
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public string? PhoneNumber { get; set; }
 
-        // No [Url] attribute here — validation done in controller
-        // so partial URLs like "linkedin.com/..." get fixed automatically
+        // Professional fields (used only when role = Professional)
+        public string? Bio { get; set; }
+        public string? Specialization { get; set; }
+        public string? YearsOfExperience { get; set; }
+        public string? Education { get; set; }
+        public string? Certifications { get; set; }
+        public string? LicenseNumber { get; set; }
         public string? ExternalProfileUrl { get; set; }
+        public bool? IsAcceptingSessions { get; set; }
+        public bool ClearAvailabilityWindow { get; set; }
+        public DateTime? AvailableFromUtc { get; set; }
+        public DateTime? AvailableUntilUtc { get; set; }
+
+        // Client emergency contact fields (used only when role = Client)
+        public string? EmergencyContactName { get; set; }
+        public string? EmergencyContactPhone { get; set; }
+        public string? EmergencyContactEmail { get; set; }
+        public string? Experience { get; set; }
     }
 }

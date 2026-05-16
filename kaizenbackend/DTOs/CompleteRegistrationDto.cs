@@ -25,17 +25,20 @@ namespace kaizenbackend.DTOs
 
         public bool IsGoogleUser { get; set; }
 
-        // Optional for all roles
+        // All roles
         public string? PhoneNumber { get; set; }
+        
+        // Client-specific
+        public string? EmergencyContact { get; set; }
+        public string? EmergencyContactPhone { get; set; }
+        public string? EmergencyContactEmail { get; set; }
 
-        // ── Professional-only fields ─────────────────────────────────────────
-        // These are validated manually in the controller so that Client/Admin
-        // registrations are never rejected for missing professional data.
+        // Professional-specific
         public string? Bio                { get; set; }
         public string? Specialization     { get; set; }
         public string? YearsOfExperience  { get; set; }
         public string? Education          { get; set; }
-        public string? Certifications     { get; set; }   // optional
+        public string? Certifications     { get; set; }
         public string? LicenseNumber      { get; set; }
         public string? ExternalProfileUrl { get; set; }
     }

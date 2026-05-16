@@ -1,41 +1,85 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import DailyIframe from '@daily-co/daily-js';
+
+let activeDailyFrame = null;
+let dailyDestroyQueue = Promise.resolve();
 
 export default function VideoCall({ roomUrl, userName, onLeave }) {
   const callContainerRef = useRef(null);
   const callFrameRef = useRef(null);
   const initializedRef = useRef(false); // Track if we've already initialized
+  const isLeavingRef = useRef(false);
+  const onLeaveRef = useRef(onLeave);
   const [isLeaving, setIsLeaving] = useState(false);
   const [error, setError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
+  useEffect(() => {
+    onLeaveRef.current = onLeave;
+  }, [onLeave]);
+
+  const destroyFrame = useCallback(async (frame) => {
+    if (!frame || frame.isDestroyed?.()) return;
+
+    try {
+      frame.removeAllListeners?.();
+
+      const state = frame.meetingState?.();
+      if (state && state !== 'new' && state !== 'left-meeting') {
+        await frame.leave().catch(() => {});
+      }
+
+      await frame.destroy();
+    } catch (err) {
+      console.warn('Error destroying call frame:', err);
+    } finally {
+      if (activeDailyFrame === frame) activeDailyFrame = null;
+      if (callFrameRef.current === frame) callFrameRef.current = null;
+      initializedRef.current = false;
+    }
+  }, []);
+
+  const destroyExistingDailyFrame = useCallback(async () => {
+    const existingFrame = activeDailyFrame || DailyIframe.getCallInstance?.();
+    if (existingFrame && !existingFrame.isDestroyed?.()) {
+      dailyDestroyQueue = dailyDestroyQueue.then(() => destroyFrame(existingFrame));
+      await dailyDestroyQueue;
+    }
+  }, [destroyFrame]);
+
   // Clean up function - strictly destroy any existing instance
-  const destroyCallFrame = () => {
+  const destroyCallFrame = useCallback(async () => {
     if (callFrameRef.current) {
       try {
-        // Remove all event listeners first
-        const frame = callFrameRef.current;
-        frame.off('joined-meeting');
-        frame.off('joining-meeting');
-        frame.off('error');
-        frame.off('camera-error');
-        frame.off('mic-error');
-        frame.off('left-meeting');
-        frame.off('participant-joined');
-        frame.off('participant-left');
-        
-        // Destroy the frame
-        frame.destroy();
+        await destroyFrame(callFrameRef.current);
       } catch (err) {
         console.warn('Error destroying call frame:', err);
-      } finally {
-        callFrameRef.current = null;
-        initializedRef.current = false;
       }
     }
-  };
+  }, [destroyFrame]);
+
+  const handleLeave = useCallback(() => {
+    if (isLeavingRef.current) return;
+    
+    isLeavingRef.current = true;
+    setIsLeaving(true);
+    
+    if (callFrameRef.current) {
+      try {
+        callFrameRef.current.leave();
+      } catch (err) {
+        console.error('Error leaving meeting:', err);
+      }
+    }
+    
+    // Call onLeave after a short delay to allow cleanup
+    setTimeout(() => {
+      destroyCallFrame();
+      onLeaveRef.current?.();
+    }, 100);
+  }, [destroyCallFrame]);
 
   useEffect(() => {
     // Prevent multiple initializations
@@ -61,13 +105,8 @@ export default function VideoCall({ roomUrl, userName, onLeave }) {
           throw new Error('Your browser does not support video calls. Please use Chrome, Firefox, or Edge.');
         }
 
-        // Request permissions (but don't fail if user denies, Daily will handle it)
-        try {
-          await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        } catch (permError) {
-          console.warn('Permission request warning:', permError);
-          // Don't throw - Daily will handle permission requests
-        }
+        await destroyExistingDailyFrame();
+        if (!isMounted) return;
 
         // Create the frame
         const frame = DailyIframe.createFrame(callContainerRef.current, {
@@ -90,6 +129,7 @@ export default function VideoCall({ roomUrl, userName, onLeave }) {
         if (!isMounted) return;
         
         callFrameRef.current = frame;
+        activeDailyFrame = frame;
         initializedRef.current = true;
 
         // Set up event listeners
@@ -134,7 +174,7 @@ export default function VideoCall({ roomUrl, userName, onLeave }) {
 
         frame.on('left-meeting', () => {
           console.log('Left meeting');
-          if (isMounted && !isLeaving) {
+          if (isMounted && !isLeavingRef.current) {
             handleLeave();
           }
         });
@@ -170,37 +210,17 @@ export default function VideoCall({ roomUrl, userName, onLeave }) {
       isMounted = false;
       destroyCallFrame();
     };
-  }, [roomUrl, userName]); // Only depend on roomUrl and userName
-
-  const handleLeave = () => {
-    if (isLeaving) return;
-    
-    setIsLeaving(true);
-    
-    if (callFrameRef.current) {
-      try {
-        callFrameRef.current.leave();
-      } catch (err) {
-        console.error('Error leaving meeting:', err);
-      }
-    }
-    
-    // Call onLeave after a short delay to allow cleanup
-    setTimeout(() => {
-      destroyCallFrame();
-      onLeave?.();
-    }, 100);
-  };
+  }, [roomUrl, userName, destroyCallFrame, destroyExistingDailyFrame, handleLeave]);
 
   const toggleMute = async () => {
     if (!callFrameRef.current) return;
     
     try {
       if (isMuted) {
-        await callFrameRef.current.setAudio(true);
+        callFrameRef.current.setLocalAudio(true);
         setIsMuted(false);
       } else {
-        await callFrameRef.current.setAudio(false);
+        callFrameRef.current.setLocalAudio(false);
         setIsMuted(true);
       }
     } catch (err) {
@@ -213,10 +233,10 @@ export default function VideoCall({ roomUrl, userName, onLeave }) {
     
     try {
       if (isVideoOff) {
-        await callFrameRef.current.setVideo(true);
+        callFrameRef.current.setLocalVideo(true);
         setIsVideoOff(false);
       } else {
-        await callFrameRef.current.setVideo(false);
+        callFrameRef.current.setLocalVideo(false);
         setIsVideoOff(true);
       }
     } catch (err) {

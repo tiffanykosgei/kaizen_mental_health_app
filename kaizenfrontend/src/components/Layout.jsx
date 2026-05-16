@@ -45,6 +45,7 @@ export default function Layout({ children }) {
   // State for profile picture
   const [profilePicture, setProfilePicture] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [notifications, setNotifications] = useState([]);
 
   // Fetch profile picture on mount and when refreshKey changes
   useEffect(() => {
@@ -94,6 +95,243 @@ export default function Layout({ children }) {
       window.removeEventListener('profilePictureChanged', handleCustomEvent);
     };
   }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !role) return;
+
+    let cancelled = false;
+    let hasBaseline = false;
+    let previousSessions = new Map();
+    let previousEarnings = null;
+    const reminderKey = `kaizenSessionReminderSent:${role}`;
+
+    const readReminderSettings = () => {
+      try {
+        return JSON.parse(localStorage.getItem('reminderSettings') || '{}');
+      } catch {
+        return {};
+      }
+    };
+
+    const browserNotificationsEnabled = () => {
+      const settings = readReminderSettings();
+      return settings.browserNotifications?.enabled === true;
+    };
+
+    const pushEnabled = (category, key) => {
+      const settings = readReminderSettings();
+      if (!browserNotificationsEnabled()) return false;
+      if (!category || !key) return true;
+      const reminder = settings[category]?.[key];
+      return reminder?.enabled !== false && reminder?.pushNotification !== false;
+    };
+
+    const emailNotificationsEnabled = () => {
+      const settings = readReminderSettings();
+      return settings.emailNotifications?.enabled !== false;
+    };
+
+    const getSessionReminderMinutes = () => {
+      const settings = readReminderSettings();
+      const category = role === 'Professional' ? 'professionalReminders' : 'clientReminders';
+      return settings[category]?.sessionStartReminder?.minutesBefore || 30;
+    };
+
+    const notify = (title, body, options = {}) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setNotifications(prev => [...prev, { id, title, body }].slice(-3));
+      window.setTimeout(() => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+      }, 7000);
+
+      if (
+        browserNotificationsEnabled() &&
+        'Notification' in window &&
+        Notification.permission === 'granted'
+      ) {
+        try {
+          new Notification(title, {
+            body,
+            tag: options.tag,
+            silent: false
+          });
+        } catch (err) {
+          console.warn('Browser notification failed:', err);
+        }
+      }
+
+      if (emailNotificationsEnabled()) {
+        API.post('/notifications/email', { subject: title, message: body })
+          .catch(err => {
+            if (err.response?.status !== 401 && err.response?.status !== 403) {
+              console.warn('Notification email failed:', err);
+            }
+          });
+      }
+    };
+
+    const getPersonName = (session) => {
+      if (role === 'Professional') {
+        return session.client?.clientFullName
+          || `${session.client?.clientFirstName || ''} ${session.client?.clientLastName || ''}`.trim()
+          || 'a client';
+      }
+      return session.professional?.professionalFullName
+        || `${session.professional?.professionalFirstName || ''} ${session.professional?.professionalLastName || ''}`.trim()
+        || 'your professional';
+    };
+
+    const readSentReminders = () => {
+      try {
+        return JSON.parse(localStorage.getItem(reminderKey) || '{}');
+      } catch {
+        return {};
+      }
+    };
+
+    const writeSentReminders = (value) => {
+      localStorage.setItem(reminderKey, JSON.stringify(value));
+    };
+
+    const checkSessionStartReminders = (sessions) => {
+      const category = role === 'Professional' ? 'professionalReminders' : 'clientReminders';
+      if (!pushEnabled(category, 'sessionStartReminder')) return;
+
+      const minutesBefore = getSessionReminderMinutes();
+      const now = Date.now();
+      const sent = readSentReminders();
+
+      sessions.forEach(session => {
+        if (session.status !== 'Confirmed' || session.paymentStatus !== 'Paid') return;
+        const sessionTime = new Date(session.sessionDate).getTime();
+        if (Number.isNaN(sessionTime)) return;
+
+        const minutesUntil = (sessionTime - now) / 60000;
+        const sentKey = `${session.id}:${minutesBefore}`;
+        if (minutesUntil <= minutesBefore && minutesUntil >= -5 && !sent[sentKey]) {
+          notify(
+            'Session reminder',
+            `Your session with ${getPersonName(session)} starts ${minutesUntil <= 1 ? 'soon' : `in about ${Math.ceil(minutesUntil)} minutes`}.`,
+            { tag: `session-reminder-${session.id}` }
+          );
+          sent[sentKey] = true;
+        }
+      });
+
+      writeSentReminders(sent);
+    };
+
+    const compareSessions = (sessions) => {
+      const current = new Map(sessions.map(session => [session.id, session]));
+
+      if (!hasBaseline) {
+        previousSessions = current;
+        hasBaseline = true;
+        checkSessionStartReminders(sessions);
+        return;
+      }
+
+      sessions.forEach(session => {
+        const previous = previousSessions.get(session.id);
+
+        if (!previous) {
+          if (role === 'Professional' && pushEnabled('professionalReminders', 'newSessionBookedReminder')) {
+            notify(
+              'New session booked',
+              `${getPersonName(session)} booked a session for ${session.formattedDate || 'an upcoming time'}.`,
+              { tag: `session-new-${session.id}` }
+            );
+          }
+          return;
+        }
+
+        if (
+          session.status !== previous.status &&
+          session.status === 'Cancelled'
+        ) {
+          const category = role === 'Professional' ? 'professionalReminders' : 'clientReminders';
+          const key = role === 'Professional' ? 'sessionCancelledReminder' : 'sessionStartReminder';
+          if (pushEnabled(category, key)) {
+            notify(
+              'Session cancelled',
+              `A session with ${getPersonName(session)} was cancelled.`,
+              { tag: `session-cancelled-${session.id}` }
+            );
+          }
+        }
+
+        if (
+          role === 'Client' &&
+          session.paymentStatus !== previous.paymentStatus &&
+          session.paymentStatus === 'Paid' &&
+          pushEnabled('clientReminders', 'paymentProcessedReminder')
+        ) {
+          notify(
+            'Payment processed',
+            `Payment for your session with ${getPersonName(session)} was processed successfully.`,
+            { tag: `payment-paid-${session.id}` }
+          );
+        }
+      });
+
+      checkSessionStartReminders(sessions);
+      previousSessions = current;
+    };
+
+    const checkProfessionalEarnings = async () => {
+      if (role !== 'Professional') return;
+      if (!pushEnabled('professionalReminders', 'professionalPaidReminder')) return;
+
+      const response = await API.get('/payment/my-earnings');
+      const earnings = response.data;
+      if (!previousEarnings) {
+        previousEarnings = earnings;
+        return;
+      }
+
+      if ((earnings.paidOut || 0) > (previousEarnings.paidOut || 0)) {
+        notify(
+          'Payout processed',
+          'A professional payout has been marked as paid.',
+          { tag: 'professional-payout-paid' }
+        );
+      }
+      previousEarnings = earnings;
+    };
+
+    const pollNotifications = async () => {
+      try {
+        const response = await API.get('/session/my-sessions');
+        if (cancelled) return;
+        const sessions = Array.isArray(response.data) ? response.data : [];
+        compareSessions(sessions);
+        await checkProfessionalEarnings();
+      } catch (err) {
+        if (err.response?.status !== 401 && err.response?.status !== 403) {
+          console.warn('Notification check failed:', err);
+        }
+      }
+    };
+
+    const handleTestNotification = () => {
+      notify(
+        'Notifications are working',
+        'You will see alerts here when relevant session or payment updates happen.',
+        { tag: 'kaizen-test-notification' }
+      );
+    };
+
+    window.addEventListener('kaizenNotificationTest', handleTestNotification);
+    pollNotifications();
+    const interval = window.setInterval(pollNotifications, 45000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('kaizenNotificationTest', handleTestNotification);
+      window.clearInterval(interval);
+    };
+  }, [role]);
 
   const navItems = role === 'Professional' ? professionalNav
     : role === 'Admin' ? adminNav
@@ -161,7 +399,7 @@ export default function Layout({ children }) {
         <div className="sidebar-footer">
           {/* Logout Button */}
           <button className="logout-btn" onClick={handleLogout}>
-            <span className="nav-icon">🚪</span>
+            <span className="nav-icon">&larr;</span>
             Log out
           </button>
         </div>
@@ -170,6 +408,23 @@ export default function Layout({ children }) {
       <main className="main-content">
         {children}
       </main>
+
+      <div className="notification-stack" aria-live="polite">
+        {notifications.map(notification => (
+          <div key={notification.id} className="notification-toast">
+            <button
+              type="button"
+              className="notification-close"
+              onClick={() => setNotifications(prev => prev.filter(n => n.id !== notification.id))}
+              aria-label="Dismiss notification"
+            >
+              x
+            </button>
+            <div className="notification-title">{notification.title}</div>
+            <div className="notification-body">{notification.body}</div>
+          </div>
+        ))}
+      </div>
 
       <style>{`
         /* Profile Avatar with Image Support */
@@ -212,7 +467,6 @@ export default function Layout({ children }) {
         
         .sidebar-profile:hover {
           background: var(--bg-hover, rgba(233,30,140,0.15));
-          transform: translateX(2px);
         }
         
         .profile-info {
@@ -233,6 +487,55 @@ export default function Layout({ children }) {
           font-size: 11px;
           color: #e91e8c;
           margin-top: 2px;
+        }
+
+        .notification-stack {
+          position: fixed;
+          right: 20px;
+          bottom: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          z-index: 2000;
+          pointer-events: none;
+        }
+
+        .notification-toast {
+          width: min(360px, calc(100vw - 40px));
+          position: relative;
+          background: var(--bg-card, #fff);
+          color: var(--text-primary, #1a202c);
+          border: 1px solid var(--border, #e2e8f0);
+          border-left: 4px solid #e91e8c;
+          border-radius: 10px;
+          box-shadow: var(--shadow-lg, 0 18px 45px rgba(15, 23, 42, 0.18));
+          padding: 14px 38px 14px 16px;
+          pointer-events: auto;
+        }
+
+        .notification-title {
+          font-size: 14px;
+          font-weight: 700;
+          margin-bottom: 4px;
+        }
+
+        .notification-body {
+          font-size: 13px;
+          line-height: 1.45;
+          color: var(--text-secondary, #4a5568);
+        }
+
+        .notification-close {
+          position: absolute;
+          top: 8px;
+          right: 10px;
+          border: none;
+          background: transparent;
+          color: var(--text-muted, #718096);
+          cursor: pointer;
+          font-size: 16px;
+          line-height: 1;
+          padding: 2px 4px;
         }
       `}</style>
     </div>

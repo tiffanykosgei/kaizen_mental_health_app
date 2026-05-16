@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/useTheme';
 import API from '../api/axios';
+import { LegalConsentCheckbox } from '../components/LegalConsent';
 
 export default function CompleteProfile() {
   const navigate = useNavigate();
@@ -11,6 +12,7 @@ export default function CompleteProfile() {
     email: '', firstName: '', lastName: '',
     password: '', confirmPassword: '',
     role: '', phoneNumber: '',
+    emergencyContact: '', emergencyContactPhone: '', emergencyContactEmail: '',
     specialization: '', licenseNumber: '',
     yearsOfExperience: '', bio: '',
     education: '', certifications: '',
@@ -21,6 +23,7 @@ export default function CompleteProfile() {
   const [loading,             setLoading]             = useState(false);
   const [showPassword,        setShowPassword]        = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [acceptedLegal,       setAcceptedLegal]       = useState(false);
 
   useEffect(() => {
     const email     = localStorage.getItem('googleEmail');
@@ -36,13 +39,17 @@ export default function CompleteProfile() {
   const getRoleConfig = () => {
     switch (formData.role) {
       case 'Client':       return { icon: '🧠',  color: 'var(--primary)',   label: 'Client'       };
-      case 'Professional': return { icon: '👩‍⚕️', color: '#9c27b0',          label: 'Professional' };
+      case 'Professional': return { icon: '👩🏾‍⚕️', color: '#9c27b0',          label: 'Professional' };
       case 'Admin':        return { icon: '🛡️',  color: 'var(--accent)',    label: 'Admin'        };
       default:             return { icon: '👤',  color: 'var(--text-secondary)', label: 'User'   };
     }
   };
 
   const config = getRoleConfig();
+  const phoneRegex = /^(07|01)\d{8}$/;
+  const phoneError = 'Phone number must use the format 0712345678 or 0112345678.';
+  const workEmailRegex = /^\d{4,5}\.\d{4}@students\.ku\.ac\.ke$/i;
+  const workEmailError = 'Professionals and admins must use a KU student work email, e.g. 0957.2022@students.ku.ac.ke or 11909.2022@students.ku.ac.ke.';
 
   const isValidUrl = (url) => {
     if (!url) return true;
@@ -82,8 +89,19 @@ export default function CompleteProfile() {
     const eObj = {};
 
     // Personal — always required
+    if ((formData.role === 'Professional' || formData.role === 'Admin') && !workEmailRegex.test((formData.email || '').trim()))
+      eObj.email = workEmailError;
     if (!formData.firstName.trim()) eObj.firstName = 'First name is required.';
     if (!formData.lastName.trim())  eObj.lastName  = 'Last name is required.';
+    if (!formData.phoneNumber.trim()) eObj.phoneNumber = 'Phone number is required.';
+    else if (!phoneRegex.test(formData.phoneNumber.trim())) eObj.phoneNumber = phoneError;
+    if (formData.role === 'Client') {
+      if (!formData.emergencyContact.trim()) eObj.emergencyContact = 'Emergency contact name is required.';
+      if (!formData.emergencyContactPhone.trim()) eObj.emergencyContactPhone = 'Emergency contact phone is required.';
+      else if (!phoneRegex.test(formData.emergencyContactPhone.trim())) eObj.emergencyContactPhone = phoneError;
+      if (!formData.emergencyContactEmail.trim()) eObj.emergencyContactEmail = 'Emergency contact email is required.';
+      else if (!/\S+@\S+\.\S+/.test(formData.emergencyContactEmail.trim())) eObj.emergencyContactEmail = 'Enter a valid emergency contact email.';
+    }
 
     // Password
     if (!formData.password)                eObj.password = 'Password is required.';
@@ -93,10 +111,11 @@ export default function CompleteProfile() {
     else if (!pwdChecks.special)           eObj.password = 'Password must include a special character.';
     if (formData.password !== formData.confirmPassword)
       eObj.confirmPassword = 'Passwords do not match.';
+    if (!acceptedLegal)
+      eObj.legal = 'Please accept the Terms of Use and Privacy Policy before creating your account.';
 
     // Professional required fields
     if (formData.role === 'Professional') {
-      if (!formData.phoneNumber.trim())      eObj.phoneNumber      = 'Phone number is required.';
       if (!formData.licenseNumber.trim())    eObj.licenseNumber    = 'License/Certification number is required.';
       if (!formData.specialization)          eObj.specialization   = 'Specialization is required.';
       if (!formData.yearsOfExperience)       eObj.yearsOfExperience = 'Years of experience is required.';
@@ -124,6 +143,9 @@ export default function CompleteProfile() {
         confirmPassword:    formData.confirmPassword,
         role:               formData.role,
         phoneNumber:        formData.phoneNumber,
+        emergencyContact:   formData.emergencyContact,
+        emergencyContactPhone: formData.emergencyContactPhone,
+        emergencyContactEmail: formData.emergencyContactEmail,
         isGoogleUser:       true,
         specialization:     formData.specialization,
         licenseNumber:      formData.licenseNumber,
@@ -208,6 +230,7 @@ export default function CompleteProfile() {
           <div style={{ background: 'var(--info-bg)', padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13, color: 'var(--info-text)' }}>
             ✓ Google Verified Email: <strong>{formData.email}</strong>
           </div>
+          {errText('email')}
 
           {/* ── Personal Information ── */}
           <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14 }}>
@@ -230,11 +253,34 @@ export default function CompleteProfile() {
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Phone Number{isPro ? requiredMark : ''}</label>
-            <input name="phoneNumber" placeholder="e.g., 0712345678" value={formData.phoneNumber}
-              onChange={handleChange} style={inputStyle(errors.phoneNumber)} />
+            <label style={labelStyle}>Phone Number{requiredMark}</label>
+            <input type="tel" name="phoneNumber" placeholder="e.g., 0712345678" value={formData.phoneNumber}
+              onChange={handleChange} maxLength={10} style={inputStyle(errors.phoneNumber)} />
             {errText('phoneNumber')}
           </div>
+
+          {formData.role === 'Client' && (
+            <>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Emergency Contact Name{requiredMark}</label>
+                <input name="emergencyContact" placeholder="Full name of trusted contact" value={formData.emergencyContact}
+                  onChange={handleChange} style={inputStyle(errors.emergencyContact)} />
+                {errText('emergencyContact')}
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Emergency Contact Phone{requiredMark}</label>
+                <input type="tel" name="emergencyContactPhone" placeholder="e.g., 0712345678" value={formData.emergencyContactPhone}
+                  onChange={handleChange} maxLength={10} style={inputStyle(errors.emergencyContactPhone)} />
+                {errText('emergencyContactPhone')}
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Emergency Contact Email{requiredMark}</label>
+                <input type="email" name="emergencyContactEmail" placeholder="trusted.contact@example.com" value={formData.emergencyContactEmail}
+                  onChange={handleChange} style={inputStyle(errors.emergencyContactEmail)} />
+                {errText('emergencyContactEmail')}
+              </div>
+            </>
+          )}
 
           {/* ── Professional-only fields ── */}
           {isPro && (
@@ -329,7 +375,7 @@ export default function CompleteProfile() {
                 onChange={handleChange} style={{ ...inputStyle(errors.password), paddingRight: 44 }} />
               <button type="button" onClick={() => setShowPassword(v => !v)}
                 style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17, color: 'var(--text-muted)', padding: 0, width: 'auto' }}>
-                {showPassword ? '👁️' : '👁️‍🗨️'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
             {errText('password')}
@@ -361,7 +407,7 @@ export default function CompleteProfile() {
                 onChange={handleChange} style={{ ...inputStyle(errors.confirmPassword), paddingRight: 44 }} />
               <button type="button" onClick={() => setShowConfirmPassword(v => !v)}
                 style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17, color: 'var(--text-muted)', padding: 0, width: 'auto' }}>
-                {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+                {showConfirmPassword ? 'Hide' : 'Show'}
               </button>
             </div>
             {formData.confirmPassword && formData.password && (
@@ -372,6 +418,16 @@ export default function CompleteProfile() {
             {errText('confirmPassword')}
           </div>
 
+          <LegalConsentCheckbox
+            checked={acceptedLegal}
+            onChange={(value) => {
+              setAcceptedLegal(value);
+              if (value && errors.legal) setErrors(prev => ({ ...prev, legal: '' }));
+            }}
+            error={errors.legal}
+            color={config.color}
+          />
+
           <button type="submit" disabled={loading}
             style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: config.color, color: 'white', border: 'none', borderRadius: 10, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
             {loading ? 'Creating Account...' : 'Complete Registration'}
@@ -381,3 +437,4 @@ export default function CompleteProfile() {
     </div>
   );
 }
+

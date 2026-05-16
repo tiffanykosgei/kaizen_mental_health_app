@@ -134,7 +134,7 @@ namespace kaizenbackend.Controllers
         {
             // Check if professional exists
             var professional = await _context.Users
-                .FirstOrDefaultAsync(u => u.Id == professionalId && u.Role == "Professional");
+                .FirstOrDefaultAsync(u => u.Id == professionalId && u.Role == "Professional" && u.IsActive);
 
             if (professional == null)
                 return NotFound(new { message = "Professional not found." });
@@ -142,7 +142,7 @@ namespace kaizenbackend.Controllers
             // Get all ratings for this professional
             var ratings = await _context.Ratings
                 .Include(r => r.Client)
-                .Where(r => r.ProfessionalId == professionalId)
+                .Where(r => r.ProfessionalId == professionalId && r.Client.IsActive)
                 .OrderByDescending(r => r.CreatedAt)
                 .Select(r => new
                 {
@@ -199,7 +199,7 @@ namespace kaizenbackend.Controllers
             var myRatings = await _context.Ratings
                 .Include(r => r.Professional)
                 .Include(r => r.Session)
-                .Where(r => r.ClientId == userId)
+                .Where(r => r.ClientId == userId && r.Professional.IsActive)
                 .OrderByDescending(r => r.CreatedAt)
                 .Select(r => new
                 {
@@ -250,6 +250,15 @@ namespace kaizenbackend.Controllers
             if (session == null)
                 return NotFound(new { message = "Session not found or you don't have permission." });
 
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            var counterpartActive = await _context.Sessions
+                .Where(s => s.Id == sessionId)
+                .Select(s => role == "Professional" ? s.Client.IsActive : s.Professional.IsActive)
+                .FirstOrDefaultAsync();
+
+            if (!counterpartActive)
+                return NotFound(new { message = "Session not found or you don't have permission." });
+
             var rating = await _context.Ratings
                 .Include(r => r.Client)
                 .FirstOrDefaultAsync(r => r.SessionId == sessionId);
@@ -280,14 +289,15 @@ namespace kaizenbackend.Controllers
         public async Task<IActionResult> GetProfessionalAverageRating(int professionalId)
         {
             var averageRating = await _context.Ratings
-                .Where(r => r.ProfessionalId == professionalId)
+                .Where(r => r.ProfessionalId == professionalId && r.Professional.IsActive)
                 .AverageAsync(r => (decimal?)r.RatingValue) ?? 0;
 
             var totalRatings = await _context.Ratings
-                .CountAsync(r => r.ProfessionalId == professionalId);
+                .CountAsync(r => r.ProfessionalId == professionalId && r.Professional.IsActive);
 
             var ratingDistribution = await _context.Ratings
                 .Where(r => r.ProfessionalId == professionalId)
+                .Where(r => r.Professional.IsActive)
                 .GroupBy(r => r.RatingValue)
                 .Select(g => new { Rating = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(g => g.Rating, g => g.Count);
@@ -383,7 +393,7 @@ namespace kaizenbackend.Controllers
         public async Task<IActionResult> GetTopRatedProfessionals([FromQuery] int limit = 10)
         {
             var topProfessionals = await _context.ProfessionalProfiles
-                .Where(p => p.AverageRating > 0)
+                .Where(p => p.AverageRating > 0 && p.User.IsActive)
                 .OrderByDescending(p => p.AverageRating)
                 .ThenByDescending(p => p.TotalEarnings)
                 .Take(limit)
@@ -415,7 +425,7 @@ namespace kaizenbackend.Controllers
             var ratings = await _context.Ratings
                 .Include(r => r.Client)
                 .Include(r => r.Session)
-                .Where(r => r.ProfessionalId == professionalId)
+                .Where(r => r.ProfessionalId == professionalId && r.Client.IsActive)
                 .OrderByDescending(r => r.CreatedAt)
                 .Select(r => new
                 {

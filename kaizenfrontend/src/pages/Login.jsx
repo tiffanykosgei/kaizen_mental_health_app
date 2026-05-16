@@ -6,7 +6,7 @@ import API from '../api/axios';
 
 const roleConfig = {
   client:       { label: 'Client',       icon: '🧠', color: 'var(--primary)', desc: 'Sign in to your wellness account' },
-  professional: { label: 'Professional', icon: '👩‍⚕️', color: 'var(--secondary)', desc: 'Sign in to your professional account' },
+  professional: { label: 'Professional', icon: '👩🏾‍⚕️', color: 'var(--secondary)', desc: 'Sign in to your professional account' },
   admin:        { label: 'Admin',        icon: '🛡️', color: 'var(--accent)', desc: 'Sign in to the admin panel' }
 };
 
@@ -192,9 +192,15 @@ export default function Login() {
               />
               <button type="button" onClick={() => setShowPassword(v => !v)}
                 style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17, color: 'var(--text-muted)', padding: 0, width: 'auto' }}>
-                {showPassword ? '👁️' : '👁️‍🗨️'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
+          </div>
+
+          <div style={{ textAlign: 'right', marginTop: -12, marginBottom: 20, fontSize: 13 }}>
+            <Link to="/forgot-password" style={{ color: config.color, fontWeight: 500 }}>
+              Forgot password?
+            </Link>
           </div>
 
           <button type="submit" disabled={loading}

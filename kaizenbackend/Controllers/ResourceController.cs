@@ -20,6 +20,13 @@ namespace kaizenbackend.Controllers
             _context = context;
         }
 
+        // Helper to check if current user is Admin
+        private bool IsAdmin()
+        {
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            return role == "Admin";
+        }
+
         // POST: api/resource/upload — Professionals ONLY
         [HttpPost("upload")]
         [Authorize(Roles = "Professional")]
@@ -51,7 +58,8 @@ namespace kaizenbackend.Controllers
                 Category     = dto.Category,
                 Url          = dto.Url,
                 UploadedBy   = userId,
-                DateUploaded = DateTime.UtcNow
+                DateUploaded = DateTime.UtcNow,
+                IsActive     = true   // new resources are active by default
             };
 
             _context.Resources.Add(resource);
@@ -60,12 +68,19 @@ namespace kaizenbackend.Controllers
             return Ok(new { message = "Resource uploaded successfully.", resourceId = resource.Id });
         }
 
-        // GET: api/resource/all — All roles
+        // GET: api/resource/all — All roles (clients, professionals, admins)
         [HttpGet("all")]
         public async Task<IActionResult> GetAll()
         {
-            var resources = await _context.Resources
-                .Include(r => r.Uploader)
+            var query = _context.Resources.AsQueryable();
+
+            // Non‑admins see only active resources
+            if (!IsAdmin())
+                query = query.Where(r => r.IsActive && r.Uploader.IsActive);
+
+            query = query.Include(r => r.Uploader);
+
+            var resources = await query
                 .OrderByDescending(r => r.DateUploaded)
                 .Select(r => new
                 {
@@ -78,6 +93,8 @@ namespace kaizenbackend.Controllers
                     r.DateUploaded,
                     r.AverageRating,
                     r.TotalRatings,
+                    uploadedById = r.Uploader.Id,
+                    uploadedByEmail = r.Uploader.Email,
                     uploadedBy = r.Uploader.FirstName + " " + r.Uploader.LastName
                 })
                 .ToListAsync();
@@ -93,9 +110,14 @@ namespace kaizenbackend.Controllers
             if (!allowedCategories.Contains(category))
                 return BadRequest("Invalid category.");
 
-            var resources = await _context.Resources
+            var query = _context.Resources
                 .Include(r => r.Uploader)
-                .Where(r => r.Category == category)
+                .Where(r => r.Category == category);
+
+            if (!IsAdmin())
+                query = query.Where(r => r.IsActive && r.Uploader.IsActive);
+
+            var resources = await query
                 .OrderByDescending(r => r.DateUploaded)
                 .Select(r => new
                 {
@@ -108,6 +130,8 @@ namespace kaizenbackend.Controllers
                     r.DateUploaded,
                     r.AverageRating,
                     r.TotalRatings,
+                    uploadedById = r.Uploader.Id,
+                    uploadedByEmail = r.Uploader.Email,
                     uploadedBy = r.Uploader.FirstName + " " + r.Uploader.LastName
                 })
                 .ToListAsync();
@@ -128,10 +152,14 @@ namespace kaizenbackend.Controllers
                 .OrderByDescending(s => s.DateCompleted)
                 .FirstOrDefaultAsync();
 
+            // Base query: active resources
+            var query = _context.Resources
+                .Include(r => r.Uploader)
+                .Where(r => r.IsActive && r.Uploader.IsActive);
+
             if (latestAssessment == null)
             {
-                var general = await _context.Resources
-                    .Include(r => r.Uploader)
+                var general = await query
                     .Where(r => r.Category == "General")
                     .OrderByDescending(r => r.AverageRating)
                     .ThenByDescending(r => r.DateUploaded)
@@ -140,6 +168,8 @@ namespace kaizenbackend.Controllers
                     {
                         r.Id, r.Title, r.Description, r.Type,
                         r.Category, r.Url, r.AverageRating, r.TotalRatings,
+                        uploadedById = r.Uploader.Id,
+                        uploadedByEmail = r.Uploader.Email,
                         uploadedBy = r.Uploader.FirstName + " " + r.Uploader.LastName
                     })
                     .ToListAsync();
@@ -149,8 +179,7 @@ namespace kaizenbackend.Controllers
 
             var primaryConcern = latestAssessment.Primaryconcern;
 
-            var recommended = await _context.Resources
-                .Include(r => r.Uploader)
+            var recommended = await query
                 .Where(r => r.Category == primaryConcern || r.Category == "General")
                 .OrderByDescending(r => r.Category == primaryConcern)
                 .ThenByDescending(r => r.AverageRating)
@@ -160,6 +189,8 @@ namespace kaizenbackend.Controllers
                 {
                     r.Id, r.Title, r.Description, r.Type,
                     r.Category, r.Url, r.AverageRating, r.TotalRatings,
+                    uploadedById = r.Uploader.Id,
+                    uploadedByEmail = r.Uploader.Email,
                     uploadedBy = r.Uploader.FirstName + " " + r.Uploader.LastName
                 })
                 .ToListAsync();
@@ -181,6 +212,7 @@ namespace kaizenbackend.Controllers
             if (userIdClaim == null) return Unauthorized();
             int userId = int.Parse(userIdClaim);
 
+            // Professionals see ALL their own resources (active or inactive)
             var resources = await _context.Resources
                 .Where(r => r.UploadedBy == userId)
                 .OrderByDescending(r => r.DateUploaded)
@@ -188,14 +220,15 @@ namespace kaizenbackend.Controllers
                 {
                     r.Id, r.Title, r.Description, r.Type,
                     r.Category, r.Url, r.DateUploaded,
-                    r.AverageRating, r.TotalRatings
+                    r.AverageRating, r.TotalRatings,
+                    r.IsActive   // include status so frontend can show it
                 })
                 .ToListAsync();
 
             return Ok(resources);
         }
 
-        // DELETE: api/resource/{id} — Professional (own resources) or Admin
+        // DELETE: api/resource/{id} — Professionals soft‑deactivate, Admins hard‑delete
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
@@ -208,12 +241,20 @@ namespace kaizenbackend.Controllers
             var resource = await _context.Resources.FindAsync(id);
             if (resource == null) return NotFound("Resource not found.");
 
-            // Admins can delete any resource; professionals can only delete their own
-            if (role == "Admin" || resource.UploadedBy == userId)
+            // Admins can still permanently delete any resource
+            if (role == "Admin")
             {
                 _context.Resources.Remove(resource);
                 await _context.SaveChangesAsync();
-                return Ok(new { message = "Resource deleted successfully." });
+                return Ok(new { message = "Resource permanently deleted by admin." });
+            }
+
+            // Professionals can only deactivate their own resources (soft delete)
+            if (resource.UploadedBy == userId)
+            {
+                resource.IsActive = false;
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Resource has been deactivated. It will no longer appear to regular users." });
             }
 
             return Forbid("You can only delete resources you uploaded.");

@@ -14,5 +14,6 @@ namespace kaizenbackend.Models
         public int TotalRatings { get; set; } = 0;
 
         public User Uploader { get; set; } = null!;
+        public bool IsActive { get; set; } = true;
     }
 }
