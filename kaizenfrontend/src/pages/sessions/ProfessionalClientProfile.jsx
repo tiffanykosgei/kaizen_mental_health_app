@@ -149,6 +149,8 @@ export default function ProfessionalClientProfile() {
     ? (assessments.reduce((sum, a) => sum + a.overallScore, 0) / assessments.length).toFixed(1)
     : null;
   const latestScore = hasAssessments ? assessments[0].overallScore : null;
+  const chartMaxHeight = 100;
+  const getTrendBarHeight = (score) => Math.max(8, Math.round((Number(score || 0) / 5) * chartMaxHeight));
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 24px' }}>
@@ -252,11 +254,11 @@ export default function ProfessionalClientProfile() {
             {assessments.length >= 2 && (
               <div style={{ marginBottom: 28 }}>
                 <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--text-secondary)' }}>Progress Trend</h4>
-                <div style={{ height: 140, display: 'flex', alignItems: 'flex-end', gap: 8, padding: '8px 0' }}>
+                <div style={{ height: 150, display: 'flex', alignItems: 'flex-end', gap: 8, padding: '8px 0' }}>
                   {[...assessments].reverse().map(a => (
-                    <div key={a.id} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <div key={a.id} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: PINK }}>{a.overallScore}</span>
-                      <div style={{ width: '100%', height: `${(a.overallScore / 5) * 100}%`, minHeight: 8, background: `linear-gradient(180deg, ${PINK}, ${PURPLE})`, borderRadius: '4px 4px 0 0' }} />
+                      <div style={{ width: '100%', height: getTrendBarHeight(a.overallScore), background: `linear-gradient(180deg, ${PINK}, ${PURPLE})`, borderRadius: '4px 4px 0 0', transition: 'height 0.4s ease' }} />
                       <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>
                         {new Date(a.dateCompleted).toLocaleDateString('en-KE', { month: 'short', day: 'numeric' })}
                       </span>

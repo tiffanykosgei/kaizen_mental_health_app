@@ -74,9 +74,10 @@ namespace kaizenbackend.Controllers
         {
             var query = _context.Resources.AsQueryable();
 
-            // Non‑admins see only active resources
+            // Non-admins see resources unless the resource itself was deactivated.
+            // Deactivated/anonymized uploader accounts should not hide active resources.
             if (!IsAdmin())
-                query = query.Where(r => r.IsActive && r.Uploader.IsActive);
+                query = query.Where(r => r.IsActive);
 
             query = query.Include(r => r.Uploader);
 
@@ -115,7 +116,7 @@ namespace kaizenbackend.Controllers
                 .Where(r => r.Category == category);
 
             if (!IsAdmin())
-                query = query.Where(r => r.IsActive && r.Uploader.IsActive);
+                query = query.Where(r => r.IsActive);
 
             var resources = await query
                 .OrderByDescending(r => r.DateUploaded)
@@ -152,10 +153,11 @@ namespace kaizenbackend.Controllers
                 .OrderByDescending(s => s.DateCompleted)
                 .FirstOrDefaultAsync();
 
-            // Base query: active resources
+            // Base query: active resources. The uploader's account status should
+            // not hide resources that admins have left active.
             var query = _context.Resources
                 .Include(r => r.Uploader)
-                .Where(r => r.IsActive && r.Uploader.IsActive);
+                .Where(r => r.IsActive);
 
             if (latestAssessment == null)
             {

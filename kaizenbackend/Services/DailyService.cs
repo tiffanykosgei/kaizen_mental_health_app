@@ -48,7 +48,7 @@ namespace kaizenbackend.Services
                     properties = new
                     {
                         exp = expiryMinutes > 0 ? (int?)(DateTime.UtcNow.AddMinutes(expiryMinutes).Subtract(DateTime.UnixEpoch).TotalSeconds) : null,
-                        enable_chat = true,
+                        enable_chat = false,
                         enable_screenshare = true,
                         enable_prejoin_ui = true,
                         lang = "en"

@@ -17,17 +17,20 @@ namespace kaizenbackend.Controllers
         private readonly AppDbContext _context;
         private readonly IPaymentService _paymentService;
         private readonly IDailyService _dailyService;
+        private readonly ISessionStatusService _sessionStatusService;
         private readonly ILogger<PaymentController> _logger;
 
         public PaymentController(
             AppDbContext context,
             IPaymentService paymentService,
             IDailyService dailyService,
+            ISessionStatusService sessionStatusService,
             ILogger<PaymentController> logger)
         {
             _context = context;
             _paymentService = paymentService;
             _dailyService = dailyService;
+            _sessionStatusService = sessionStatusService;
             _logger = logger;
         }
 
@@ -48,8 +51,6 @@ namespace kaizenbackend.Controllers
 
             if (professional?.CustomSplitPercentage.HasValue == true)
                 professionalPercentage = professional.CustomSplitPercentage.Value;
-            else if (professional != null && professional.AverageRating > 0)
-                professionalPercentage = GetPercentageFromRating(professional.AverageRating);
 
             int platformPercentage = 100 - professionalPercentage;
             decimal professionalEarnings = Math.Round(amount * professionalPercentage / 100, 2);
@@ -124,6 +125,8 @@ namespace kaizenbackend.Controllers
                 if (request == null || request.SessionId == 0)
                     return BadRequest(new { success = false, message = "SessionId is required." });
 
+                await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (userIdClaim == null) return Unauthorized();
                 int userId = int.Parse(userIdClaim);
@@ -136,6 +139,9 @@ namespace kaizenbackend.Controllers
 
                 if (session.PaymentStatus == "Paid")
                     return BadRequest(new { success = false, message = "Session already paid." });
+
+                if (session.Status == "Cancelled")
+                    return BadRequest(new { success = false, message = "This session has been cancelled." });
 
                 // Resolve phone — request body first, then user profile
                 string phoneNumber = request.PhoneNumber?.Trim() ?? "";
@@ -202,6 +208,8 @@ namespace kaizenbackend.Controllers
             if (userIdClaim == null) return Unauthorized();
             int userId = int.Parse(userIdClaim);
 
+            await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
             var session = await _context.Sessions
                 .FirstOrDefaultAsync(s => s.Id == sessionId && s.ClientId == userId);
 
@@ -210,6 +218,9 @@ namespace kaizenbackend.Controllers
 
             if (session.PaymentStatus == "Paid")
                 return BadRequest(new { success = false, message = "Session already paid." });
+
+            if (session.Status == "Cancelled")
+                return BadRequest(new { success = false, message = "This session has been cancelled." });
 
             var user = await _context.Users.FindAsync(userId);
             if (string.IsNullOrEmpty(user?.PhoneNumber))
@@ -363,6 +374,8 @@ namespace kaizenbackend.Controllers
             if (userIdClaim == null) return Unauthorized();
             int userId = int.Parse(userIdClaim);
 
+            await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
             var session = await _context.Sessions
                 .FirstOrDefaultAsync(s => s.Id == sessionId && s.ClientId == userId);
 
@@ -424,6 +437,8 @@ namespace kaizenbackend.Controllers
             if (userIdClaim == null) return Unauthorized();
             int userId = int.Parse(userIdClaim);
 
+            await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
             var session = await _context.Sessions
                 .FirstOrDefaultAsync(s => s.Id == sessionId && s.ClientId == userId);
 
@@ -461,12 +476,9 @@ namespace kaizenbackend.Controllers
             var totalSessions = await _context.Sessions
                 .CountAsync(s => s.ProfessionalId == userId && s.PaymentStatus == "Paid");
 
-            var averageRating = professional?.AverageRating ?? 0;
-
             var settings = await _context.PlatformSettings.FirstOrDefaultAsync();
             int defaultPct = settings?.DefaultProfessionalPercentage ?? 60;
-            int currentSplitPercentage = professional?.CustomSplitPercentage ??
-                (averageRating > 0 ? GetPercentageFromRating(averageRating) : defaultPct);
+            int currentSplitPercentage = professional?.CustomSplitPercentage ?? defaultPct;
 
             return Ok(new
             {
@@ -474,7 +486,7 @@ namespace kaizenbackend.Controllers
                 pendingPayout          = professional?.PendingPayout ?? 0,
                 paidOut                = professional?.PaidOut ?? 0,
                 totalSessions,
-                averageRating,
+                averageRating = professional?.AverageRating ?? 0,
                 currentSplitPercentage
             });
         }

@@ -31,12 +31,7 @@ namespace kaizenbackend.Controllers
             if (resource == null)
                 return NotFound("Resource not found.");
 
-            var uploaderIsActive = await _context.Resources
-                .Where(r => r.Id == resourceId)
-                .Select(r => r.Uploader.IsActive)
-                .FirstOrDefaultAsync();
-
-            if (!resource.IsActive || !uploaderIsActive)
+            if (!resource.IsActive)
                 return NotFound("Resource not found.");
 
             if (request.Rating < 1 || request.Rating > 5)

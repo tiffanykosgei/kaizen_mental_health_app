@@ -17,12 +17,18 @@ namespace kaizenbackend.Controllers
         private readonly AppDbContext _context;
         private readonly TimeZoneInfo _eastAfricaTime;
         private readonly IDailyService _dailyService;
+        private readonly ISessionStatusService _sessionStatusService;
         private readonly ILogger<SessionController> _logger;
 
-        public SessionController(AppDbContext context, IDailyService dailyService, ILogger<SessionController> logger)
+        public SessionController(
+            AppDbContext context,
+            IDailyService dailyService,
+            ISessionStatusService sessionStatusService,
+            ILogger<SessionController> logger)
         {
             _context = context;
             _dailyService = dailyService;
+            _sessionStatusService = sessionStatusService;
             _logger = logger;
 
             try
@@ -180,6 +186,8 @@ namespace kaizenbackend.Controllers
         {
             try
             {
+                await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
                 var professional = await _context.Users
                     .Include(u => u.ProfessionalProfile)
                     .FirstOrDefaultAsync(u => u.Id == professionalId && u.Role == "Professional" && u.IsActive);
@@ -277,6 +285,8 @@ namespace kaizenbackend.Controllers
         {
             try
             {
+                await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (userIdClaim == null) return Unauthorized();
                 int clientId = int.Parse(userIdClaim);
@@ -291,6 +301,20 @@ namespace kaizenbackend.Controllers
 
                 if (professional == null)
                     return BadRequest("Selected professional not found.");
+
+                var unresolvedSession = await _context.Sessions
+                    .Where(s => s.ClientId == clientId
+                        && s.Status != "Cancelled"
+                        && s.Status != "Completed")
+                    .OrderBy(s => s.SessionDate)
+                    .FirstOrDefaultAsync();
+
+                if (unresolvedSession != null)
+                    return BadRequest(new
+                    {
+                        code = "ACTIVE_SESSION_EXISTS",
+                        message = "You already have another booked session. Please complete that session first, then rate it before booking a new one."
+                    });
 
                 var hasUnratedCompletedSession = await _context.Sessions
                     .Where(s => s.ClientId == clientId && s.Status == "Completed")
@@ -470,6 +494,8 @@ namespace kaizenbackend.Controllers
         {
             try
             {
+                await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (userIdClaim == null) return Unauthorized();
                 int userId = int.Parse(userIdClaim);
@@ -650,6 +676,8 @@ namespace kaizenbackend.Controllers
         {
             try
             {
+                await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (userIdClaim == null) return Unauthorized();
                 int userId = int.Parse(userIdClaim);

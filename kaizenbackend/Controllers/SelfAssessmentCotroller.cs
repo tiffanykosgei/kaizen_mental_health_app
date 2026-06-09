@@ -284,7 +284,7 @@ namespace kaizenbackend.Controllers
             // Up to 4 exact-category matches, sorted by rating then date
             var exact = await _context.Resources
                 .Include(r => r.Uploader)
-                .Where(r => r.IsActive && r.Uploader.IsActive && r.Category.ToLower() == primaryConcern.ToLower())
+                .Where(r => r.IsActive && r.Category.ToLower() == primaryConcern.ToLower())
                 .OrderByDescending(r => r.AverageRating)
                 .ThenByDescending(r => r.DateUploaded)
                 .Take(4)
@@ -299,7 +299,7 @@ namespace kaizenbackend.Controllers
                 var excludeIds = exact.Select(r => r.Id).ToList();
                 general = await _context.Resources
                     .Include(r => r.Uploader)
-                    .Where(r => r.IsActive && r.Uploader.IsActive && r.Category.ToLower() == "general" && !excludeIds.Contains(r.Id))
+                    .Where(r => r.IsActive && r.Category.ToLower() == "general" && !excludeIds.Contains(r.Id))
                     .OrderByDescending(r => r.AverageRating)
                     .ThenByDescending(r => r.DateUploaded)
                     .Take(remaining)

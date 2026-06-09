@@ -112,17 +112,12 @@ export default function VideoCall({ roomUrl, userName, onLeave }) {
         const frame = DailyIframe.createFrame(callContainerRef.current, {
           showLeaveButton: true,
           showFullscreenButton: true,
-          showChat: false, // Disable chat to reduce complexity
           showParticipantsBar: true,
           iframeStyle: {
             width: '100%',
             height: '100%',
             border: 'none',
             borderRadius: '12px'
-          },
-          userMediaConstraints: {
-            audio: true,
-            video: true
           }
         });
 
@@ -154,6 +149,8 @@ export default function VideoCall({ roomUrl, userName, onLeave }) {
             errorMessage += 'Please check your internet connection.';
           } else if (e.errorMsg?.includes('Duplicate')) {
             errorMessage += 'A call is already in progress. Please refresh the page.';
+          } else if (e.errorMsg?.includes('account-missing-payment-method')) {
+            errorMessage += 'The video provider account needs a payment method before calls can start.';
           } else {
             errorMessage += 'Please try again.';
           }

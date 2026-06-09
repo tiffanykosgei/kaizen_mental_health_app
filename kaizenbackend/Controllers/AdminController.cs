@@ -16,11 +16,16 @@ namespace kaizenbackend.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IEmailService _emailService;
+        private readonly ISessionStatusService _sessionStatusService;
 
-        public AdminController(AppDbContext context, IEmailService emailService)
+        public AdminController(
+            AppDbContext context,
+            IEmailService emailService,
+            ISessionStatusService sessionStatusService)
         {
             _context = context;
             _emailService = emailService;
+            _sessionStatusService = sessionStatusService;
         }
 
         private bool IsAdmin()
@@ -34,6 +39,8 @@ namespace kaizenbackend.Controllers
         public async Task<IActionResult> GetStats()
         {
             if (!IsAdmin()) return Forbid();
+
+            await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
 
             var totalClients = await _context.Users
                 .CountAsync(u => u.Role == "Client");
@@ -242,6 +249,8 @@ namespace kaizenbackend.Controllers
         {
             if (!IsAdmin()) return Forbid();
 
+            await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
+
             var user = await _context.Users.FindAsync(id);
             if (user == null)
                 return NotFound(new { message = "User not found" });
@@ -401,6 +410,8 @@ namespace kaizenbackend.Controllers
         public async Task<IActionResult> GetAllSessions()
         {
             if (!IsAdmin()) return Forbid();
+
+            await _sessionStatusService.CancelExpiredUnpaidSessionsAsync();
 
             var sessions = await _context.Sessions
                 .Include(s => s.Client)

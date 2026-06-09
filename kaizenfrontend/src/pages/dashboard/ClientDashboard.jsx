@@ -26,11 +26,13 @@ export default function ClientDashboard() {
   const fetchClientData = async () => {
     setLoading(true);
     try {
-      const [sessionsRes, assessmentsRes] = await Promise.all([
+      const [sessionsRes, assessmentsRes, journalRes] = await Promise.all([
         API.get('/Session/my-sessions'),
-        API.get('/SelfAssessment/my-history')
+        API.get('/SelfAssessment/my-history'),
+        API.get('/journal')
       ]);
       const allSessions = sessionsRes.data || [];
+      const journalEntries = journalRes.data || [];
       const now = new Date();
       setUpcomingSessions(allSessions.filter(s => new Date(s.sessionDate) > now && s.status !== 'Cancelled').slice(0, 3));
       setLatestAssessment(assessmentsRes.data?.[0] || null);
@@ -39,7 +41,7 @@ export default function ClientDashboard() {
         completedSessions: allSessions.filter(s => s.status === 'Completed').length,
         upcomingSessions: allSessions.filter(s => new Date(s.sessionDate) > now && s.status !== 'Cancelled').length,
         totalAssessments: assessmentsRes.data?.length || 0,
-        totalJournalEntries: 0
+        totalJournalEntries: journalEntries.length
       });
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };

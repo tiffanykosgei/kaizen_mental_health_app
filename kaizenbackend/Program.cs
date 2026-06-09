@@ -57,6 +57,8 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddDataProtection();
 builder.Services.AddScoped<IJournalEncryptionService, JournalEncryptionService>();
 builder.Services.AddHostedService<JournalEncryptionBackfillService>();
+builder.Services.AddScoped<ISessionStatusService, SessionStatusService>();
+builder.Services.AddHostedService<SessionStatusBackgroundService>();
 
 // ── KEY FIX: case-insensitive JSON so sessionId == SessionId == SESSIONID ──
 builder.Services.AddControllers()
